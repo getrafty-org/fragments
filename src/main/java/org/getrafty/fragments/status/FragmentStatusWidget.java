@@ -2,7 +2,7 @@ package org.getrafty.fragments.status;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.StatusBarWidget;
-import org.getrafty.fragments.services.FragmentsManager;
+import org.getrafty.fragments.services.FragmentsDataService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,13 +28,13 @@ public class FragmentViewWidget implements StatusBarWidget, StatusBarWidget.Text
     @NotNull
     @Override
     public String getText() {
-        return (FragmentsManager.CURRENT_FRAGMENT_VERSION == FragmentsManager.FragmentVersion.USER ? "User-facing" : "Dev") + " fragments";
+        return (FragmentsDataService.CURRENT_FRAGMENT_VERSION == FragmentsDataService.FragmentVersion.USER ? "@User-facing" : "@Maintainer-facing");
     }
 
     @Nullable
     @Override
     public String getTooltipText() {
-        return getText();
+        return "Fragments";
     }
 
     @Override
