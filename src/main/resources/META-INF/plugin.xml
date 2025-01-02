@@ -1,0 +1,45 @@
+<idea-plugin>
+    <!-- Unique plugin identifier -->
+    <id>org.getrafty.fragments</id>
+
+    <!-- Display name of the plugin -->
+    <name>Fragments</name>
+
+    <!-- Vendor information -->
+    <vendor email="support@getrafty.org" url="https://getrafty.org">getrafty.org</vendor>
+
+    <!-- Plugin description -->
+    <description><![CDATA[
+        Fragments is a tiny plugin for developers and maintainers of getrafty.org resource.<br/>
+        See <a href="https://github.com/sidosera/getrafty">GitHub</a> for more information.
+    ]]></description>
+
+    <!-- Dependency on the IntelliJ Platform -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- Specify compatibility with IntelliJ IDEA versions -->
+    <idea-version since-build="242.0" until-build="243.*"/>
+
+    <actions>
+        <action id="AddFragment" class="org.getrafty.fragments.actions.InsertFragmentAction" text="Add Fragment">
+            <add-to-group group-id="EditorPopupMenu" anchor="last" />
+        </action>
+
+        <action id="SwitchFragmentView" class="org.getrafty.fragments.actions.ToggleFragmentsViewAction" text="Switch Fragment View">
+            <add-to-group group-id="EditorPopupMenu" anchor="last" />
+        </action>
+
+        <action id="RemoveFragment" class="org.getrafty.fragments.actions.RemoveFragmentAction" text="Remove Fragment">
+            <add-to-group group-id="EditorPopupMenu" anchor="last" />
+        </action>
+    </actions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <statusBarWidgetFactory id="sw" implementation="org.getrafty.fragments.status.FragmentViewWidgetFactory" />
+        <postStartupActivity implementation="org.getrafty.fragments.listeners.OnProjectOpened" />
+    </extensions>
+
+    <projectListeners>
+    </projectListeners>
+
+</idea-plugin>
