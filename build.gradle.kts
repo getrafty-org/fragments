@@ -5,11 +5,10 @@ plugins {
     id("java")
     id("idea")
     id("org.jetbrains.intellij.platform") version "2.2.1"
-
 }
 
 group = "org.getrafty"
-version = "0.1"
+version = "git rev-parse --short=7 HEAD".runCommand(workingDir = rootDir)
 
 repositories {
     mavenCentral()
@@ -64,3 +63,21 @@ tasks {
         jvmArgs("-Xmx16G") // Set JVM arguments for IDE debugging
     }
 }
+
+fun String.runCommand(
+    workingDir: File = File("."),
+    timeoutAmount: Long = 60,
+    timeoutUnit: TimeUnit = TimeUnit.SECONDS
+): String = ProcessBuilder(split("\\s(?=(?:[^'\"`]*(['\"`])[^'\"`]*\\1)*[^'\"`]*$)".toRegex()))
+    .directory(workingDir)
+    .redirectOutput(ProcessBuilder.Redirect.PIPE)
+    .redirectError(ProcessBuilder.Redirect.PIPE)
+    .start()
+    .apply { waitFor(timeoutAmount, timeoutUnit) }
+    .run {
+        val error = errorStream.bufferedReader().readText().trim()
+        if (error.isNotEmpty()) {
+            throw Exception(error)
+        }
+        inputStream.bufferedReader().readText().trim()
+    }

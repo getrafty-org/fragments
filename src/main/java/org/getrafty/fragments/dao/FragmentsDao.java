@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Objects;
 
 @Service(Service.Level.PROJECT)
 public final class FragmentsDao {
@@ -23,22 +22,23 @@ public final class FragmentsDao {
 
     private final static ThreadLocal<Gson> GSON = ThreadLocal.withInitial(Gson::new);
 
-    private final Path fragmentsFolder;
+    private final Path fragmetsDataPath;
 
     public FragmentsDao(@NotNull Project project) {
-        var config = project.getService(PluginConfig.class);
-
-        this.fragmentsFolder = Path.of(Objects.requireNonNull(project.getBasePath()), config.fragmentsFolder());
-
         try {
-            Files.createDirectories(fragmentsFolder);
+            var config = project.getService(PluginConfig.class);
+
+            this.fragmetsDataPath = config.fragmetsDataPath();
+            if (!Files.exists(fragmetsDataPath)) {
+                Files.createDirectories(fragmetsDataPath);
+            }
         } catch (IOException e) {
             throw new RuntimeException("Failed to initialize Fragments folder", e);
         }
     }
 
     public void saveFragment(@NotNull String id, @NotNull String code, @NotNull String mode) {
-        var fragmentPath = getSnippetFilePath(id);
+        var fragmentPath = fragmentPath(id);
 
         try {
             JsonObject root;
@@ -66,13 +66,12 @@ public final class FragmentsDao {
     }
 
     public String findFragment(@NotNull String id, @NotNull String mode) {
-        var snippetFile = getSnippetFilePath(id);
         try {
-            if (Files.exists(snippetFile)) {
-                var json = Files.readString(snippetFile);
+            final var path = fragmentPath(id);
+            if (Files.exists(path)) {
+                var json = Files.readString(path);
                 var root = JsonParser.parseString(json).getAsJsonObject();
                 var versions = root.getAsJsonObject(FRAGMENT_VERSIONS);
-
                 if (versions.has(mode)) {
                     return versions.getAsJsonObject(mode).get(FRAGMENT_CODE).getAsString();
                 }
@@ -84,7 +83,7 @@ public final class FragmentsDao {
         return null;
     }
 
-    private @NotNull Path getSnippetFilePath(@NotNull String id) {
-        return fragmentsFolder.resolve("@" + id + ".json");
+    private @NotNull Path fragmentPath(@NotNull String id) {
+        return fragmetsDataPath.resolve("@" + id + ".json");
     }
 }

@@ -1,2 +1,0 @@
-- The IntelliJ Platform cache directory should be excluded from the version control system. Add the '.intellijPlatform' entry to the '.gitignore' file.
-- The Java configuration specifies sourceCompatibility='17' but IntelliJ Platform '2024.2.1' requires sourceCompatibility='21'.

@@ -12,7 +12,8 @@ import java.util.Objects;
 
 import static org.getrafty.fragments.FragmentUtils.FRAGMENT_PATTERN;
 
-public class FragmentCaretListener implements CaretListener {
+public class FragmentHighlighter implements CaretListener {
+    // TODO: Move to configuration
     public static final Color REGULAR = new Color(204, 237, 255, 30);
     public static final Color DARK = new Color(80, 104, 119);
 
@@ -20,7 +21,7 @@ public class FragmentCaretListener implements CaretListener {
 
     private RangeHighlighter currentHighlighter;
 
-    public FragmentCaretListener(Editor editor) {
+    public FragmentHighlighter(Editor editor) {
         this.editor = editor;
     }
 

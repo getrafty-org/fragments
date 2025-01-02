@@ -21,25 +21,17 @@
     <idea-version since-build="242.0" until-build="243.*"/>
 
     <actions>
-        <action id="AddFragment" class="org.getrafty.fragments.actions.InsertFragmentAction" text="Add Fragment">
+        <action id="InsertFragment" class="org.getrafty.fragments.actions.InsertFragmentAction" text="Insert Code Fragment">
             <add-to-group group-id="EditorPopupMenu" anchor="last" />
         </action>
 
-        <action id="SwitchFragmentView" class="org.getrafty.fragments.actions.ToggleFragmentsViewAction" text="Switch Fragment View">
-            <add-to-group group-id="EditorPopupMenu" anchor="last" />
-        </action>
-
-        <action id="RemoveFragment" class="org.getrafty.fragments.actions.RemoveFragmentAction" text="Remove Fragment">
+        <action id="RemoveFragment" class="org.getrafty.fragments.actions.RemoveFragmentAction" text="Remove Code Fragment">
             <add-to-group group-id="EditorPopupMenu" anchor="last" />
         </action>
     </actions>
 
     <extensions defaultExtensionNs="com.intellij">
-        <statusBarWidgetFactory id="sw" implementation="org.getrafty.fragments.status.FragmentViewWidgetFactory" />
+        <statusBarWidgetFactory id="sw" implementation="org.getrafty.fragments.status.FragmentStatusWidget$FragmentStatusWidgetFactory" />
         <postStartupActivity implementation="org.getrafty.fragments.listeners.OnProjectOpened" />
     </extensions>
-
-    <projectListeners>
-    </projectListeners>
-
 </idea-plugin>

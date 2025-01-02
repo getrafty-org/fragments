@@ -1,11 +1,10 @@
 package org.getrafty.fragments;
 
-import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.vfs.VirtualFile;
-import org.getrafty.fragments.services.FragmentsIndex;
-import org.jetbrains.annotations.NotNull;
+import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.project.Project;
+import org.getrafty.fragments.services.FragmentsDataService;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class FragmentUtils {
@@ -14,29 +13,33 @@ public class FragmentUtils {
             Pattern.DOTALL
     );
 
-    public static void reindexFile(@NotNull VirtualFile file, @NotNull FragmentsIndex fragmentIndex) {
-        var document = FileDocumentManager.getInstance().getDocument(file);
-        if (document == null) {
-            return;
-        }
+    public static void loadFragmentsIntoCurrentEditor(Project project, Document document) {
+        var fragmentsManager = project.getService(FragmentsDataService.class);
 
-        fragmentIndex.forgetFragmentEntriesForFile(file);
 
-        // Extract and register snippets
-        String fileContent = document.getText();
-        Matcher matcher = FRAGMENT_PATTERN.matcher(fileContent);
+        String text = document.getText();
+
+        var updatedText = new StringBuilder();
+        int lastMatchEnd = 0;
+
+        var matcher = FRAGMENT_PATTERN.matcher(text);
 
         while (matcher.find()) {
-            String fragmentId = matcher.group(1).trim();
-            int startOffset = matcher.start();
-            int endOffset = matcher.end();
-            var entry = new FragmentsIndex.Entry(
-                    fragmentId,
-                    file,
-                    startOffset,
-                    endOffset
-            );
-            fragmentIndex.addFragmentIndexEntry(entry);
+            String snippetId = matcher.group(1);
+            String currentContent = matcher.group(2);
+            var newContent = fragmentsManager.findFragment(snippetId);
+
+            updatedText.append(text, lastMatchEnd, matcher.start());
+            updatedText.append("// ==== YOUR CODE: @").append(snippetId).append(" ====");
+            updatedText.append(newContent != null ? newContent : currentContent);
+            updatedText.append("// ==== END YOUR CODE ====");
+            lastMatchEnd = matcher.end();
         }
+
+        updatedText.append(text.substring(lastMatchEnd));
+
+        WriteCommandAction.runWriteCommandAction(null, () -> {
+            document.setText(updatedText.toString());
+        });
     }
 }

@@ -6,17 +6,17 @@ import org.getrafty.fragments.dao.FragmentsDao;
 import org.jetbrains.annotations.NotNull;
 
 @Service(Service.Level.PROJECT)
-public final class FragmentsManager {
+public final class FragmentsDataService {
    public enum FragmentVersion {
-        MAINTAINER,
-        USER
+       PUBLIC,
+       PRIVATE,
     }
 
-    private final FragmentsDao fragmentsDao;
-    
-    public static FragmentVersion CURRENT_FRAGMENT_VERSION = FragmentVersion.USER;
+    public static FragmentVersion CURRENT_FRAGMENT_VERSION = FragmentVersion.PUBLIC;
 
-    public FragmentsManager(@NotNull Project project) {
+    private final FragmentsDao fragmentsDao;
+
+    public FragmentsDataService(@NotNull Project project) {
         this.fragmentsDao = project.getService(FragmentsDao.class);
     }
 
@@ -28,9 +28,9 @@ public final class FragmentsManager {
         return fragmentsDao.findFragment(fragmentId, CURRENT_FRAGMENT_VERSION.name());
     }
 
-    public void toggleFragmentVersion() {
-        CURRENT_FRAGMENT_VERSION = (CURRENT_FRAGMENT_VERSION == FragmentVersion.MAINTAINER)
-                ? FragmentVersion.USER
-                : FragmentVersion.MAINTAINER;
+    public static void swapFragmentVersion() {
+        CURRENT_FRAGMENT_VERSION = (CURRENT_FRAGMENT_VERSION == FragmentVersion.PRIVATE)
+                ? FragmentVersion.PUBLIC
+                : FragmentVersion.PRIVATE;
     }
 }
