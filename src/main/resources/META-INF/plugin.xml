@@ -10,8 +10,7 @@
 
     <!-- Plugin description -->
     <description><![CDATA[
-        Fragments is a tiny plugin for developers and maintainers of getrafty.org resource.<br/>
-        See <a href="https://github.com/sidosera/getrafty">GitHub</a> for more information.
+        Fragments is a tiny plugin to manage versioned code fragments inside codebases
     ]]></description>
 
     <!-- Dependency on the IntelliJ Platform -->
