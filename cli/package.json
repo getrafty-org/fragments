@@ -1,0 +1,25 @@
+{
+  "name": "fragments-cli",
+  "version": "0.1.0",
+  "description": "CLI backend for managing versioned code fragments",
+  "main": "dist/index.js",
+  "bin": {
+    "fragments": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["fragments", "code", "versioning", "cli"],
+  "author": "getrafty.org",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "zlib": "^1.0.5"
+  }
+}
