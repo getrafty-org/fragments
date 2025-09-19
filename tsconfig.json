@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "composite": true,
+    "moduleResolution": "node"
+  },
+  "references": [
+    { "path": "./protocol" },
+    { "path": "./language-server" },
+    { "path": "./vscode-extension" }
+  ]
+}

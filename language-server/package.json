@@ -1,0 +1,27 @@
+{
+  "name": "fragments-language-server",
+  "version": "0.1.0",
+  "description": "Language server for managing versioned code fragments",
+  "main": "dist/server.js",
+  "bin": {
+    "fragments-language-server": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "start": "node dist/server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": ["fragments", "code", "versioning", "language-server"],
+  "author": "getrafty.org",
+  "license": "MIT",
+  "dependencies": {
+    "fragments-protocol": "file:../protocol"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.0"
+  }
+}

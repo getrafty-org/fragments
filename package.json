@@ -1,0 +1,16 @@
+{
+  "name": "fragments-root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fragments tooling aggregate",
+  "scripts": {
+    "bootstrap": "npm install --prefix protocol && npm install --prefix language-server && npm install --prefix vscode-extension",
+    "build": "npm run build:protocol && npm run build:language-server && npm run build:extension",
+    "build:protocol": "npm run build --prefix protocol",
+    "build:language-server": "npm run build --prefix language-server",
+    "build:extension": "npm run build --prefix vscode-extension"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

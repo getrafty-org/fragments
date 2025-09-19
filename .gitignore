@@ -26,3 +26,13 @@ replay_pid*
 /.intellijPlatform/
 /build/
 /.gradle/
+
+# Node.js artifacts
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
