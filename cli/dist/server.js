@@ -299,8 +299,48 @@ class FragmentsServer {
         const lines = doc.content.split('\n');
         const lineContent = lines[params.line];
         if (!lineContent) {
-            return { success: true, markerLines: [] };
+            return { success: true, markerRanges: [] };
         }
+        const buildMarkerSymbolRanges = (lineIndex, content, fragmentId, flags) => {
+            const firstNonWhitespace = Math.max(content.search(/\S|$/), 0);
+            if (firstNonWhitespace >= content.length) {
+                return [];
+            }
+            const remainder = content.slice(firstNonWhitespace);
+            const startTokenMatch = remainder.match(/^[^\s=<>-]+|^<+[!\-]+|^[-#\/]+/);
+            const startTokenLength = startTokenMatch ? startTokenMatch[0].length : 1;
+            const ranges = [
+                {
+                    startLine: lineIndex,
+                    startCharacter: firstNonWhitespace,
+                    endLine: lineIndex,
+                    endCharacter: firstNonWhitespace + startTokenLength,
+                    isStartMarker: flags.isStartMarker,
+                    isEndMarker: flags.isEndMarker,
+                    fragmentId
+                }
+            ];
+            const trimmedEnd = content.trimEnd();
+            const knownClosingTokens = ['-->', '*/'];
+            for (const token of knownClosingTokens) {
+                if (trimmedEnd.endsWith(token)) {
+                    const tokenStart = content.lastIndexOf(token);
+                    if (tokenStart !== -1 && tokenStart >= firstNonWhitespace + startTokenLength) {
+                        ranges.push({
+                            startLine: lineIndex,
+                            startCharacter: tokenStart,
+                            endLine: lineIndex,
+                            endCharacter: tokenStart + token.length,
+                            isStartMarker: flags.isStartMarker,
+                            isEndMarker: flags.isEndMarker,
+                            fragmentId
+                        });
+                    }
+                    break;
+                }
+            }
+            return ranges;
+        };
         // Check if this line is a fragment marker
         const startMatch = lineContent.match(/(.*)YOUR CODE: @([^\s]+) ====/);
         const endMatch = lineContent.includes('==== END YOUR CODE ====');
@@ -315,22 +355,21 @@ class FragmentsServer {
                 }
             }
             if (endLine !== -1) {
+                const startLineContent = lines[params.line];
+                const endLineContent = lines[endLine];
+                const markerRanges = [
+                    ...buildMarkerSymbolRanges(params.line, startLineContent, fragmentId, {
+                        isStartMarker: true,
+                        isEndMarker: false
+                    }),
+                    ...buildMarkerSymbolRanges(endLine, endLineContent, fragmentId, {
+                        isStartMarker: false,
+                        isEndMarker: true
+                    })
+                ];
                 return {
                     success: true,
-                    markerLines: [
-                        {
-                            line: params.line,
-                            isStartMarker: true,
-                            isEndMarker: false,
-                            fragmentId: fragmentId
-                        },
-                        {
-                            line: endLine,
-                            isStartMarker: false,
-                            isEndMarker: true,
-                            fragmentId: fragmentId
-                        }
-                    ]
+                    markerRanges
                 };
             }
         }
@@ -347,26 +386,25 @@ class FragmentsServer {
                 }
             }
             if (startLine !== -1) {
+                const startLineContent = lines[startLine];
+                const endLineContent = lines[params.line];
+                const markerRanges = [
+                    ...buildMarkerSymbolRanges(startLine, startLineContent, fragmentId, {
+                        isStartMarker: true,
+                        isEndMarker: false
+                    }),
+                    ...buildMarkerSymbolRanges(params.line, endLineContent, fragmentId, {
+                        isStartMarker: false,
+                        isEndMarker: true
+                    })
+                ];
                 return {
                     success: true,
-                    markerLines: [
-                        {
-                            line: startLine,
-                            isStartMarker: true,
-                            isEndMarker: false,
-                            fragmentId: fragmentId
-                        },
-                        {
-                            line: params.line,
-                            isStartMarker: false,
-                            isEndMarker: true,
-                            fragmentId: fragmentId
-                        }
-                    ]
+                    markerRanges
                 };
             }
         }
-        return { success: true, markerLines: [] };
+        return { success: true, markerRanges: [] };
     }
     async getAllFragmentRanges(params) {
         const doc = this.openFiles.get(params.textDocument.uri);

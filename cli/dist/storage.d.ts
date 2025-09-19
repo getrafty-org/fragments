@@ -1,12 +1,62 @@
 import { ProjectFragments } from './types';
-export declare class FragmentStorage {
-    private static readonly STORAGE_FILE;
-    private static readonly SCHEMA_VERSION;
-    static isInitialized(dir?: string): boolean;
-    static initialize(dir?: string, versions?: string[], activeVersion?: string): Promise<ProjectFragments>;
-    static load(dir?: string): Promise<ProjectFragments | null>;
-    static save(data: ProjectFragments, dir?: string): Promise<void>;
-    static updateFragment(fragmentId: string, version: string, content: string, dir?: string): Promise<void>;
-    static getFragmentContent(fragmentId: string, version: string, dir?: string): Promise<string | null>;
+export interface IFragmentStorage {
+    isInitialized(): boolean;
+    initialize(versions?: string[], activeVersion?: string): Promise<ProjectFragments>;
+    load(): Promise<ProjectFragments>;
+    save(data: ProjectFragments): Promise<void>;
+    ensureFragment(fragmentId: string, currentContent?: string): Promise<void>;
+    updateFragment(fragmentId: string, version: string, content: string): Promise<void>;
+    getFragmentContent(fragmentId: string, version: string): Promise<string | null>;
+    createVersion(name: string, encrypted?: boolean, key?: string): Promise<void>;
+    listVersions(): Promise<{
+        active: string;
+        versions: Array<{
+            name: string;
+            encrypted: boolean;
+            keyId?: string;
+        }>;
+    } | null>;
+    switchVersion(versionName: string): Promise<void>;
+    updateFilesWithVersion(workingDirectory: string, versionName: string): Promise<{
+        updatedFiles: string[];
+        fragmentsProcessed: number;
+    }>;
+}
+export interface IEncryptionService {
+    encrypt(content: string, key: string): string;
+    decrypt(encryptedContent: string, key: string): string;
+}
+export declare class EncryptionService implements IEncryptionService {
+    private generateKeyHash;
+    encrypt(content: string, key: string): string;
+    decrypt(encryptedContent: string, key: string): string;
+}
+export declare class FragmentStorage implements IFragmentStorage {
+    private readonly SCHEMA_VERSION;
+    private readonly storageFilePath;
+    private readonly encryptionService;
+    constructor(storageFilePath: string, encryptionService?: IEncryptionService);
+    isInitialized(): boolean;
+    initialize(versions?: string[], activeVersion?: string): Promise<ProjectFragments>;
+    load(): Promise<ProjectFragments>;
+    save(data: ProjectFragments): Promise<void>;
+    ensureFragment(fragmentId: string, currentContent?: string): Promise<void>;
+    updateFragment(fragmentId: string, version: string, content: string): Promise<void>;
+    getFragmentContent(fragmentId: string, version: string): Promise<string | null>;
+    createVersion(name: string, encrypted?: boolean, key?: string): Promise<void>;
+    listVersions(): Promise<{
+        active: string;
+        versions: Array<{
+            name: string;
+            encrypted: boolean;
+            keyId?: string;
+        }>;
+    } | null>;
+    switchVersion(versionName: string): Promise<void>;
+    updateFilesWithVersion(workingDirectory: string, versionName: string): Promise<{
+        updatedFiles: string[];
+        fragmentsProcessed: number;
+    }>;
+    private updateFileFragments;
 }
 //# sourceMappingURL=storage.d.ts.map

@@ -219,7 +219,7 @@ async function activate(context) {
         border: '1px solid',
         borderColor: new vscode.ThemeColor('editorHoverWidget.border'),
         borderRadius: '3px',
-        isWholeLine: true
+        isWholeLine: false
     });
     context.subscriptions.push(fragmentHoverDecorationType);
     // Diagnostic collection for fragment issues
@@ -289,10 +289,9 @@ async function activate(context) {
             }
             // Check if current line is a fragment marker
             const result = await fragmentsClient.getFragmentPositions(editor.document, currentLine);
-            if (result.success && result.markerLines && result.markerLines.length > 0) {
-                // Apply highlight to all marker lines (both start and end)
-                const ranges = result.markerLines.map((markerLine) => new vscode.Range(new vscode.Position(markerLine.line, 0), new vscode.Position(markerLine.line, editor.document.lineAt(markerLine.line).text.length)));
-                editor.setDecorations(fragmentHoverDecorationType, ranges);
+            if (result.success && result.markerRanges && result.markerRanges.length > 0) {
+                const markerRanges = result.markerRanges.map((markerRange) => new vscode.Range(new vscode.Position(markerRange.startLine, markerRange.startCharacter ?? 0), new vscode.Position(markerRange.endLine, markerRange.endCharacter ?? editor.document.lineAt(markerRange.endLine).text.length)));
+                editor.setDecorations(fragmentHoverDecorationType, markerRanges);
                 currentHoveredMarker = { editor, line: currentLine };
             }
             else if (currentHoveredMarker && currentHoveredMarker.line === currentLine) {

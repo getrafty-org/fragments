@@ -109,11 +109,14 @@ export declare class FragmentsServer {
         line: number;
     }): Promise<{
         success: boolean;
-        markerLines: {
-            line: number;
+        markerRanges: {
+            startLine: number;
+            startCharacter: number;
+            endLine: number;
+            endCharacter: number;
             isStartMarker: boolean;
             isEndMarker: boolean;
-            fragmentId: string | null;
+            fragmentId: string;
         }[];
     }>;
     getAllFragmentRanges(params: {
