@@ -152,7 +152,7 @@ export class FragmentUtils {
   }
 
   /**
-   * Parse fragment from content with line numbers
+   * Parse fragment from content with line numbers using stack-based approach for proper nesting
    */
   public static parseFragmentsWithLines(content: string): Array<{
     id: string;
@@ -170,40 +170,100 @@ export class FragmentUtils {
       indentation: string;
     }> = [];
 
+    // Stack to track nested fragments
+    const fragmentStack: Array<{
+      id: string;
+      startLine: number;
+      indentation: string;
+      contentLines: string[];
+    }> = [];
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const startMatch = line.match(/(.*)YOUR CODE: @([^\s]+) ====/);
+      const endMatch = line.includes('==== END YOUR CODE ====');
 
       if (startMatch) {
+        // Found a start marker - push to stack
         const fragmentId = startMatch[2];
         const indentation = this.extractIndentation(line);
 
-        // Find the end marker
-        let endLine = -1;
-        let currentContent = '';
+        fragmentStack.push({
+          id: fragmentId,
+          startLine: i,
+          indentation: indentation,
+          contentLines: []
+        });
+      } else if (endMatch && fragmentStack.length > 0) {
+        // Found an end marker - pop from stack
+        const fragment = fragmentStack.pop()!;
 
-        for (let j = i + 1; j < lines.length; j++) {
-          if (lines[j].includes('==== END YOUR CODE ====')) {
-            endLine = j;
-            break;
-          }
-          // Include all lines between markers (don't skip any)
-          currentContent += lines[j] + '\n';
-        }
+        // Create the fragment with all content between start and end
+        const currentContent = fragment.contentLines.join('\n');
 
-        if (endLine !== -1) {
-          fragments.push({
-            id: fragmentId,
-            startLine: i,
-            endLine: endLine,
-            currentContent: currentContent.replace(/\n$/, ''), // Remove trailing newline
-            indentation
-          });
+        fragments.push({
+          id: fragment.id,
+          startLine: fragment.startLine,
+          endLine: i,
+          currentContent: currentContent,
+          indentation: fragment.indentation
+        });
+      } else if (fragmentStack.length > 0) {
+        // We're inside fragment(s) - add this line to all open fragments
+        for (const openFragment of fragmentStack) {
+          openFragment.contentLines.push(line);
         }
       }
     }
 
-    return fragments;
+    // Sort fragments by start line for consistent ordering
+    return fragments.sort((a, b) => a.startLine - b.startLine);
+  }
+
+  /**
+   * Detect fragments that are nested inside other fragments
+   */
+  public static findNestedFragments(content: string): Array<{
+    fragmentId: string;
+    parentFragmentId: string;
+    startLine: number;
+    endLine: number;
+  }> {
+    const fragments = this.parseFragmentsWithLines(content);
+    const nestedFragments: Array<{
+      fragmentId: string;
+      parentFragmentId: string;
+      startLine: number;
+      endLine: number;
+    }> = [];
+
+    const stack: Array<{
+      id: string;
+      startLine: number;
+      endLine: number;
+    }> = [];
+
+    for (const fragment of fragments) {
+      while (stack.length > 0 && fragment.startLine > stack[stack.length - 1].endLine) {
+        stack.pop();
+      }
+
+      if (stack.length > 0) {
+        const parent = stack[stack.length - 1];
+        if (fragment.startLine > parent.startLine && fragment.endLine < parent.endLine) {
+          nestedFragments.push({
+            fragmentId: fragment.id,
+            parentFragmentId: parent.id,
+            startLine: fragment.startLine,
+            endLine: fragment.endLine
+          });
+        }
+      }
+
+      stack.push({ id: fragment.id, startLine: fragment.startLine, endLine: fragment.endLine });
+    }
+
+    return nestedFragments;
   }
 
   /**

@@ -208,6 +208,7 @@ class FragmentsLanguageClient {
 let fragmentsClient: FragmentsLanguageClient;
 let statusBarItem: vscode.StatusBarItem;
 let fragmentHoverDecorationType: vscode.TextEditorDecorationType;
+let fragmentDiagnostics: vscode.DiagnosticCollection;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Initialize fragments client
@@ -228,6 +229,10 @@ export async function activate(context: vscode.ExtensionContext) {
     isWholeLine: true
   });
   context.subscriptions.push(fragmentHoverDecorationType);
+
+  // Diagnostic collection for fragment issues
+  fragmentDiagnostics = vscode.languages.createDiagnosticCollection('fragments');
+  context.subscriptions.push(fragmentDiagnostics);
 
   // Update status bar with current version
   await updateStatusBar();
@@ -347,6 +352,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const onDocumentClose = vscode.workspace.onDidCloseTextDocument(async (document) => {
     if (shouldProcessFile(document)) {
       await fragmentsClient.onDocumentClose(document);
+      fragmentDiagnostics.delete(document.uri);
     }
   });
 
@@ -354,6 +360,32 @@ export async function activate(context: vscode.ExtensionContext) {
     if (shouldProcessFile(document)) {
       try {
         const result = await fragmentsClient.saveFragments(document);
+        if (result && result.issues && result.issues.length > 0) {
+          const diagnostics = result.issues.map((issue: any) => {
+            const startLine = Math.min(issue.startLine ?? 0, document.lineCount - 1);
+            const endLine = Math.min(issue.endLine ?? startLine, document.lineCount - 1);
+            const range = new vscode.Range(
+              new vscode.Position(startLine, 0),
+              new vscode.Position(endLine, document.lineAt(endLine).text.length)
+            );
+
+            return new vscode.Diagnostic(
+              range,
+              issue.message || 'Nested fragments are not supported.',
+              vscode.DiagnosticSeverity.Error
+            );
+          });
+
+          fragmentDiagnostics.set(document.uri, diagnostics);
+
+          vscode.window.showErrorMessage(
+            'Nested fragments are not supported. Remove nested fragment markers and save again.'
+          );
+          return;
+        }
+
+        fragmentDiagnostics.delete(document.uri);
+
         if (result.fragmentsSaved > 0) {
           vscode.window.setStatusBarMessage(
             `Saved ${result.fragmentsSaved} fragments to ${result.activeVersion}`,
@@ -363,6 +395,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await updateStatusBar();
         }
       } catch (error) {
+        fragmentDiagnostics.delete(document.uri);
         console.warn(`Failed to save fragments for ${document.fileName}:`, error);
       }
     }

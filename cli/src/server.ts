@@ -211,6 +211,23 @@ export class FragmentsServer {
 
     const data = await this.storage.load();
     const fragments = FragmentUtils.parseFragmentsWithLines(content);
+    const nestedFragments = FragmentUtils.findNestedFragments(content);
+
+    if (nestedFragments.length > 0) {
+      return {
+        success: false,
+        fragmentsSaved: 0,
+        activeVersion: data.activeVersion,
+        issues: nestedFragments.map(nested => ({
+          type: 'nested-fragment',
+          fragmentId: nested.fragmentId,
+          parentFragmentId: nested.parentFragmentId,
+          startLine: nested.startLine,
+          endLine: nested.endLine,
+          message: `Fragment @${nested.fragmentId} is nested inside fragment @${nested.parentFragmentId}. Nested fragments are not supported.`
+        }))
+      };
+    }
 
     // Auto-discover and ensure all fragments exist in storage
     for (const fragment of fragments) {
