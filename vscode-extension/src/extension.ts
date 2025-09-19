@@ -190,14 +190,47 @@ class FragmentsLanguageClient {
       indentation
     });
   }
+
+  async getFragmentPositions(document: vscode.TextDocument, line: number) {
+    return this.sendRequest('fragments/getFragmentPositions', {
+      textDocument: { uri: document.uri.toString() },
+      line: line
+    });
+  }
+
+  async getAllFragmentRanges(document: vscode.TextDocument) {
+    return this.sendRequest('fragments/getAllFragmentRanges', {
+      textDocument: { uri: document.uri.toString() }
+    });
+  }
 }
 
 let fragmentsClient: FragmentsLanguageClient;
+let statusBarItem: vscode.StatusBarItem;
+let fragmentHoverDecorationType: vscode.TextEditorDecorationType;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Initialize fragments client
   fragmentsClient = new FragmentsLanguageClient();
   await fragmentsClient.start();
+
+  // Create status bar item
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.command = 'fragments.switchVersion';
+  context.subscriptions.push(statusBarItem);
+
+  // Create decoration type for fragment marker hover (full line highlight)
+  fragmentHoverDecorationType = vscode.window.createTextEditorDecorationType({
+    backgroundColor: new vscode.ThemeColor('editor.hoverHighlightBackground'),
+    border: '1px solid',
+    borderColor: new vscode.ThemeColor('editorHoverWidget.border'),
+    borderRadius: '3px',
+    isWholeLine: true
+  });
+  context.subscriptions.push(fragmentHoverDecorationType);
+
+  // Update status bar with current version
+  await updateStatusBar();
 
   // Apply fragments to already open documents
   const alreadyOpenDocuments = vscode.workspace.textDocuments.filter(shouldProcessFile);
@@ -222,6 +255,69 @@ export async function activate(context: vscode.ExtensionContext) {
     const codeExtensions = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.dart', '.sql', '.html', '.css', '.scss', '.less', '.vue', '.svelte'];
     const fileExtension = document.fileName.toLowerCase().substring(document.fileName.lastIndexOf('.'));
     return codeExtensions.includes(fileExtension);
+  }
+
+  // Function to update status bar with current version
+  async function updateStatusBar() {
+    try {
+      const versionData = await fragmentsClient.getVersion();
+      if (versionData && versionData.activeVersion) {
+        statusBarItem.text = `$(versions) ${versionData.activeVersion}`;
+        statusBarItem.tooltip = `Fragments version: ${versionData.activeVersion}. Click to switch versions.`;
+        statusBarItem.show();
+      } else {
+        statusBarItem.text = `$(versions) fragments`;
+        statusBarItem.tooltip = 'Fragments not initialized. Click to initialize.';
+        statusBarItem.show();
+      }
+    } catch (error) {
+      statusBarItem.text = `$(error) fragments`;
+      statusBarItem.tooltip = 'Error getting fragments version';
+      statusBarItem.show();
+    }
+  }
+
+  // Function to handle cursor position changes for marker hover effect
+  let currentHoveredMarker: { editor: vscode.TextEditor; line: number } | null = null;
+
+  async function handleCursorPositionChange(event: vscode.TextEditorSelectionChangeEvent) {
+    const editor = event.textEditor;
+    if (!shouldProcessFile(editor.document)) {
+      return;
+    }
+
+    const position = editor.selection.active;
+    const currentLine = position.line;
+
+    try {
+      // Clear previous highlight if we moved to a different line
+      if (currentHoveredMarker &&
+          (currentHoveredMarker.editor !== editor || currentHoveredMarker.line !== currentLine)) {
+        currentHoveredMarker.editor.setDecorations(fragmentHoverDecorationType, []);
+        currentHoveredMarker = null;
+      }
+
+      // Check if current line is a fragment marker
+      const result = await fragmentsClient.getFragmentPositions(editor.document, currentLine);
+      if (result.success && result.markerLines && result.markerLines.length > 0) {
+        // Apply highlight to all marker lines (both start and end)
+        const ranges = result.markerLines.map((markerLine: any) =>
+          new vscode.Range(
+            new vscode.Position(markerLine.line, 0),
+            new vscode.Position(markerLine.line, editor.document.lineAt(markerLine.line).text.length)
+          )
+        );
+
+        editor.setDecorations(fragmentHoverDecorationType, ranges);
+        currentHoveredMarker = { editor, line: currentLine };
+      } else if (currentHoveredMarker && currentHoveredMarker.line === currentLine) {
+        // Clear highlight if we're no longer on a marker line
+        editor.setDecorations(fragmentHoverDecorationType, []);
+        currentHoveredMarker = null;
+      }
+    } catch (error) {
+      // Silently ignore errors for hover functionality
+    }
   }
 
   // Document lifecycle events
@@ -263,6 +359,8 @@ export async function activate(context: vscode.ExtensionContext) {
             `Saved ${result.fragmentsSaved} fragments to ${result.activeVersion}`,
             3000
           );
+          // Update status bar in case version changed
+          await updateStatusBar();
         }
       } catch (error) {
         console.warn(`Failed to save fragments for ${document.fileName}:`, error);
@@ -418,11 +516,50 @@ export async function activate(context: vscode.ExtensionContext) {
         const filesMsg = updatedCount > 0 ? ` (${updatedCount} files updated)` : '';
         const appliedMsg = appliedCount > 0 ? ` ${appliedCount} open files refreshed.` : '';
         vscode.window.showInformationMessage(`Switched to version '${selectedItem.version}'${filesMsg}.${appliedMsg}`);
+
+        // Update status bar to reflect new version
+        await updateStatusBar();
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Error switching version: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
+
+  // Folding Range Provider for fragments
+  const fragmentsFoldingProvider: vscode.FoldingRangeProvider = {
+    async provideFoldingRanges(document: vscode.TextDocument): Promise<vscode.FoldingRange[]> {
+      if (!shouldProcessFile(document)) {
+        return [];
+      }
+
+      try {
+        const result = await fragmentsClient.getAllFragmentRanges(document);
+        if (result.success && result.fragments) {
+          return result.fragments.map((fragment: any) =>
+            new vscode.FoldingRange(
+              fragment.startLine,
+              fragment.endLine,
+              vscode.FoldingRangeKind.Region
+            )
+          );
+        }
+      } catch (error) {
+        // Silently ignore errors
+      }
+
+      return [];
+    }
+  };
+
+  // Register folding provider for all supported languages
+  const codeLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp', 'c', 'csharp', 'go', 'rust', 'php', 'ruby', 'swift', 'kotlin', 'dart', 'sql', 'html', 'css', 'scss', 'less', 'vue', 'svelte'];
+  const foldingProviderDisposable = vscode.languages.registerFoldingRangeProvider(
+    codeLanguages.map(lang => ({ language: lang })),
+    fragmentsFoldingProvider
+  );
+
+  // Register cursor position change handler for hover effect
+  const onSelectionChange = vscode.window.onDidChangeTextEditorSelection(handleCursorPositionChange);
 
   // Register everything
   context.subscriptions.push(
@@ -430,6 +567,8 @@ export async function activate(context: vscode.ExtensionContext) {
     onDocumentChange,
     onDocumentClose,
     onDocumentSave,
+    onSelectionChange,
+    foldingProviderDisposable,
     getVersionCommand,
     listVersionsCommand,
     insertMarkerCommand,
@@ -440,5 +579,11 @@ export async function activate(context: vscode.ExtensionContext) {
 export async function deactivate() {
   if (fragmentsClient) {
     await fragmentsClient.stop();
+  }
+  if (statusBarItem) {
+    statusBarItem.dispose();
+  }
+  if (fragmentHoverDecorationType) {
+    fragmentHoverDecorationType.dispose();
   }
 }

@@ -84,6 +84,12 @@ export class FragmentsServer {
         case 'fragments/getVersion':
           result = await this.getVersion();
           break;
+        case 'fragments/getFragmentPositions':
+          result = await this.getFragmentPositions(request.params);
+          break;
+        case 'fragments/getAllFragmentRanges':
+          result = await this.getAllFragmentRanges(request.params);
+          break;
         case 'fragments/init':
           result = await this.init(request.params);
           break;
@@ -283,6 +289,106 @@ export class FragmentsServer {
         initialized: false
       };
     }
+  }
+
+  async getFragmentPositions(params: { textDocument: { uri: string }; line: number }) {
+    const doc = this.openFiles.get(params.textDocument.uri);
+    if (!doc) throw new Error('Document not open');
+
+    const lines = doc.content.split('\n');
+    const lineContent = lines[params.line];
+
+    if (!lineContent) {
+      return { success: true, markerLines: [] };
+    }
+
+    // Check if this line is a fragment marker
+    const startMatch = lineContent.match(/(.*)YOUR CODE: @([^\s]+) ====/);
+    const endMatch = lineContent.includes('==== END YOUR CODE ====');
+
+    if (startMatch) {
+      // Find the matching end marker
+      const fragmentId = startMatch[2];
+      let endLine = -1;
+
+      for (let i = params.line + 1; i < lines.length; i++) {
+        if (lines[i].includes('==== END YOUR CODE ====')) {
+          endLine = i;
+          break;
+        }
+      }
+
+      if (endLine !== -1) {
+        return {
+          success: true,
+          markerLines: [
+            {
+              line: params.line,
+              isStartMarker: true,
+              isEndMarker: false,
+              fragmentId: fragmentId
+            },
+            {
+              line: endLine,
+              isStartMarker: false,
+              isEndMarker: true,
+              fragmentId: fragmentId
+            }
+          ]
+        };
+      }
+    } else if (endMatch) {
+      // Find the matching start marker
+      let startLine = -1;
+      let fragmentId = null;
+
+      for (let i = params.line - 1; i >= 0; i--) {
+        const match = lines[i].match(/(.*)YOUR CODE: @([^\s]+) ====/);
+        if (match) {
+          startLine = i;
+          fragmentId = match[2];
+          break;
+        }
+      }
+
+      if (startLine !== -1) {
+        return {
+          success: true,
+          markerLines: [
+            {
+              line: startLine,
+              isStartMarker: true,
+              isEndMarker: false,
+              fragmentId: fragmentId
+            },
+            {
+              line: params.line,
+              isStartMarker: false,
+              isEndMarker: true,
+              fragmentId: fragmentId
+            }
+          ]
+        };
+      }
+    }
+
+    return { success: true, markerLines: [] };
+  }
+
+  async getAllFragmentRanges(params: { textDocument: { uri: string } }) {
+    const doc = this.openFiles.get(params.textDocument.uri);
+    if (!doc) throw new Error('Document not open');
+
+    const fragments = FragmentUtils.parseFragmentsWithLines(doc.content);
+
+    return {
+      success: true,
+      fragments: fragments.map(fragment => ({
+        id: fragment.id,
+        startLine: fragment.startLine,
+        endLine: fragment.endLine
+      }))
+    };
   }
 
   async init(params: { versions?: string[]; activeVersion?: string }) {
