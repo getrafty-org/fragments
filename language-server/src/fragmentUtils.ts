@@ -1,3 +1,7 @@
+export const FRAGMENT_START_PREFIX = '==== YOUR CODE: @';
+export const FRAGMENT_END_TOKEN = '==== END YOUR CODE ====';
+export const FRAGMENT_START_REGEX = /(.*)YOUR CODE: @([^\s]+) ====/;
+
 export interface MarkerInsertionRequest {
   languageId: string;
   lineContent: string;
@@ -71,14 +75,15 @@ export class FragmentUtils {
     indentation: string = ''
   ): string {
     const comment = this.getCommentStyle(languageId);
+    const startLine = `${indentation}${comment.start} ${FRAGMENT_START_PREFIX}${fragmentId} ====`.trimEnd();
+    const endLineBase = `${indentation}${comment.start} ${FRAGMENT_END_TOKEN}`.trimEnd();
 
     if (comment.end) {
-      // Multi-line comment style (HTML, CSS)
-      return `${indentation}${comment.start} ==== YOUR CODE: @${fragmentId} ====\n${indentation}\n${indentation}${comment.start} ==== END YOUR CODE ==== ${comment.end}`;
-    } else {
-      // Single-line comment style
-      return `${indentation}${comment.start} ==== YOUR CODE: @${fragmentId} ====\n${indentation}\n${indentation}${comment.start} ==== END YOUR CODE ====`;
+      const endLine = `${endLineBase} ${comment.end}`.trimEnd();
+      return `${startLine}\n${indentation}\n${endLine}`;
     }
+
+    return `${startLine}\n${indentation}\n${endLineBase}`;
   }
 
   /**
@@ -256,6 +261,6 @@ export class FragmentUtils {
   }
 
   public static containsFragmentMarkers(content: string): boolean {
-    return content.includes('==== YOUR CODE: @');
+    return content.includes(FRAGMENT_START_PREFIX);
   }
 }

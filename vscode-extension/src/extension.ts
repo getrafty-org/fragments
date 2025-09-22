@@ -4,10 +4,10 @@ import { FragmentDiagnosticsManager } from './services/diagnosticsManager';
 import { FragmentHoverHighlighter } from './services/hoverHighlighter';
 import { FragmentStatusBarManager } from './services/statusBarManager';
 import {
-  FragmentApplyResult,
   FragmentChangeVersionResult,
-  FragmentSaveResult,
-  FragmentVersionInfo
+  FragmentVersionInfo,
+  PushFragmentsResult,
+  PullFragmentsResult
 } from 'fragments-protocol';
 import { isProcessableDocument } from './utils/documentFilters';
 
@@ -28,7 +28,7 @@ export async function activate(context: vscode.ExtensionContext) {
   hoverHighlighter.register();
   await statusBarManager.initialize();
 
-  await applyFragmentsToOpenDocuments();
+  await pullFragmentsForOpenDocuments();
 
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(handleDocumentOpen),
@@ -51,12 +51,12 @@ export async function deactivate() {
   }
 }
 
-async function applyFragmentsToOpenDocuments() {
+async function pullFragmentsForOpenDocuments() {
   const documents = vscode.workspace.textDocuments.filter(isProcessableDocument);
   for (const document of documents) {
     try {
       await fragmentsClient.onDocumentOpen(document);
-      const result: FragmentApplyResult = await fragmentsClient.applyFragments(document);
+      const result: PullFragmentsResult = await fragmentsClient.pullFragments(document);
       if (result.hasChanges) {
         await document.save();
       }
@@ -74,7 +74,7 @@ async function handleDocumentOpen(document: vscode.TextDocument) {
   await fragmentsClient.onDocumentOpen(document);
 
   try {
-    const result: FragmentApplyResult = await fragmentsClient.applyFragments(document);
+    const result: PullFragmentsResult = await fragmentsClient.pullFragments(document);
     if (result.hasChanges) {
       await document.save();
     }
@@ -114,7 +114,7 @@ async function handleDocumentSave(document: vscode.TextDocument) {
   }
 
   try {
-    const result: FragmentSaveResult = await fragmentsClient.saveFragments(document);
+    const result: PushFragmentsResult = await fragmentsClient.pushFragments(document);
     if (!result.success && result.issues && result.issues.length > 0) {
       diagnosticsManager.setIssues(document, result.issues);
       vscode.window.showErrorMessage(
@@ -183,7 +183,7 @@ function registerInsertMarkerCommand(): vscode.Disposable {
       const indentationMatch = lineContent.match(/^(\s*)/);
       const indentation = indentationMatch ? indentationMatch[1] : '';
 
-      const result = await fragmentsClient.generateMarker(
+      const result = await fragmentsClient.insertMarker(
         document.languageId,
         lineContent,
         indentation

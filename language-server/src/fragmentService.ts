@@ -2,30 +2,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { DocumentManager } from './documentManager';
-import { FragmentDiscovery } from './fragmentDiscovery';
-import { FragmentUtils } from './fragmentUtils';
-import { RevisionTracker } from './revisionTracker';
+import { FragmentFileLocator } from './fragmentFileLocator';
+import { FragmentUtils, FRAGMENT_END_TOKEN, FRAGMENT_START_REGEX } from './fragmentUtils';
+import { RevisionState } from './revisionState';
 import { IFragmentStorage } from './storage';
 import {
-  ApplyFragmentsParams,
+  AllRangesParams,
   ChangeVersionParams,
   DidPersistDocumentParams,
   FragmentAllRangesResult,
-  FragmentApplyResult,
   FragmentChangeVersionResult,
   FragmentDocumentChange,
-  FragmentGenerateMarkerResult,
-  FragmentInitResult,
   FragmentIssue,
   FragmentMarkerRange,
   FragmentMarkerRangesResult,
   FragmentOperationResult,
-  FragmentSaveResult,
   FragmentVersionInfo,
-  FragmentRequestParams,
-  GenerateMarkerParams,
-  InitParams,
-  SaveFragmentsParams
+  InsertMarkerParams,
+  InsertMarkerResult,
+  MarkerPositionsParams,
+  PullFragmentsParams,
+  PullFragmentsResult,
+  PushFragmentsParams,
+  PushFragmentsResult
 } from 'fragments-protocol';
 
 interface ContentResolution {
@@ -39,16 +38,11 @@ export class FragmentService {
   constructor(
     private readonly documents: DocumentManager,
     private readonly storage: IFragmentStorage,
-    private readonly workspaceRoot: string
-  ) {
-    this.discovery = new FragmentDiscovery(workspaceRoot);
-    this.revisions = new RevisionTracker();
-  }
+    private readonly fileLocator: FragmentFileLocator,
+    private readonly revisionState: RevisionState
+  ) {}
 
-  private readonly discovery: FragmentDiscovery;
-  private readonly revisions: RevisionTracker;
-
-  async applyFragments(params: ApplyFragmentsParams): Promise<FragmentApplyResult> {
+  async pullFragments(params: PullFragmentsParams): Promise<PullFragmentsResult> {
     const resolution = await this.resolveContent(params);
     const data = await this.storage.load();
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
@@ -80,7 +74,7 @@ export class FragmentService {
     };
   }
 
-  async saveFragments(params: SaveFragmentsParams): Promise<FragmentSaveResult> {
+  async pushFragments(params: PushFragmentsParams): Promise<PushFragmentsResult> {
     const resolution = await this.resolveContent(params);
     const data = await this.storage.load();
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
@@ -136,8 +130,8 @@ export class FragmentService {
       .filter(document => FragmentUtils.containsFragmentMarkers(document.content));
 
     for (const document of openDocuments) {
-      const result = await this.applyFragments({ textDocument: { uri: document.uri } });
-      const revision = this.revisions.nextRevision(document.uri);
+      const result = await this.pullFragments({ textDocument: { uri: document.uri } });
+      const revision = this.revisionState.next(document.uri);
 
       documentChanges.push({
         uri: document.uri,
@@ -147,14 +141,14 @@ export class FragmentService {
       processedUris.add(document.uri);
     }
 
-    const discoveredFiles = await this.discovery.listFragmentFiles();
+    const discoveredFiles = await this.fileLocator.listFragmentFiles();
     for (const file of discoveredFiles) {
       if (processedUris.has(file.uri)) {
         continue;
       }
 
-      const result = await this.applyFragments({ filePath: file.path });
-      const revision = this.revisions.nextRevision(file.uri);
+      const result = await this.pullFragments({ filePath: file.path });
+      const revision = this.revisionState.next(file.uri);
 
       documentChanges.push({
         uri: file.uri,
@@ -164,7 +158,7 @@ export class FragmentService {
       processedUris.add(file.uri);
     }
 
-    const removedUris = this.revisions.prune(processedUris);
+    const removedUris = this.revisionState.prune(processedUris);
 
     return {
       success: true,
@@ -175,7 +169,7 @@ export class FragmentService {
   }
 
   acknowledgePersist(params: DidPersistDocumentParams): FragmentOperationResult {
-    const acknowledged = this.revisions.acknowledge(params.uri, params.revision);
+    const acknowledged = this.revisionState.acknowledge(params.uri, params.revision);
     if (acknowledged) {
       this.documents.markSavedIfPresent(params.uri);
     }
@@ -183,7 +177,7 @@ export class FragmentService {
     return { success: true };
   }
 
-  async generateMarker(params: GenerateMarkerParams): Promise<FragmentGenerateMarkerResult> {
+  async insertMarker(params: InsertMarkerParams): Promise<InsertMarkerResult> {
     const markerResult = FragmentUtils.generateMarkerInsertion({
       languageId: params.languageId,
       lineContent: params.lineContent || '',
@@ -215,9 +209,7 @@ export class FragmentService {
     };
   }
 
-  async getFragmentPositions(
-    params: FragmentRequestParams['fragments/query/getFragmentPositions']
-  ): Promise<FragmentMarkerRangesResult> {
+  async getFragmentPositions(params: MarkerPositionsParams): Promise<FragmentMarkerRangesResult> {
     const document = this.documents.getRequired(params.textDocument.uri);
     const lines = document.content.split('\n');
     const lineContent = lines[params.line];
@@ -226,8 +218,8 @@ export class FragmentService {
       return { success: true, markerRanges: [] };
     }
 
-    const startMatch = lineContent.match(/(.*)YOUR CODE: @([^\s]+) ====/);
-    const endMatch = lineContent.includes('==== END YOUR CODE ====');
+    const startMatch = lineContent.match(FRAGMENT_START_REGEX);
+    const endMatch = lineContent.includes(FRAGMENT_END_TOKEN);
 
     if (startMatch) {
       const fragmentId = startMatch[2];
@@ -261,9 +253,7 @@ export class FragmentService {
     return { success: true, markerRanges: [] };
   }
 
-  async getAllFragmentRanges(
-    params: FragmentRequestParams['fragments/query/getAllFragmentRanges']
-  ): Promise<FragmentAllRangesResult> {
+  async getAllFragmentRanges(params: AllRangesParams): Promise<FragmentAllRangesResult> {
     const document = this.documents.getRequired(params.textDocument.uri);
     const fragments = FragmentUtils.parseFragmentsWithLines(document.content);
 
@@ -277,17 +267,7 @@ export class FragmentService {
     };
   }
 
-  async init(params: InitParams): Promise<FragmentInitResult> {
-    const { versions = ['public', 'private'], activeVersion = 'public' } = params;
-    await this.storage.initialize(versions, activeVersion);
-    return { success: true, message: 'Fragments initialized successfully' };
-  }
-
-  private ensureAbsoluteFilePath(filePath: string): string {
-    return path.isAbsolute(filePath) ? filePath : path.join(this.workspaceRoot, filePath);
-  }
-
-  private async resolveContent(params: ApplyFragmentsParams | SaveFragmentsParams): Promise<ContentResolution> {
+  private async resolveContent(params: PullFragmentsParams | PushFragmentsParams): Promise<ContentResolution> {
     if (params.textDocument) {
       const document = this.documents.getRequired(params.textDocument.uri);
       return {
@@ -298,7 +278,9 @@ export class FragmentService {
     }
 
     if (params.filePath) {
-      const absolutePath = this.ensureAbsoluteFilePath(params.filePath);
+      const absolutePath = path.isAbsolute(params.filePath)
+        ? params.filePath
+        : path.resolve(params.filePath);
       const content = await fs.promises.readFile(absolutePath, 'utf-8');
       return {
         type: 'file',
@@ -313,7 +295,8 @@ export class FragmentService {
 
   private findMatchingEndLine(lines: string[], startIndex: number): number {
     for (let i = startIndex; i < lines.length; i++) {
-      if (lines[i].includes('==== END YOUR CODE ====') || lines[i].includes('==== END YOUR CODE ==== -->')) {
+      const line = lines[i];
+      if (line.includes(FRAGMENT_END_TOKEN) || line.includes(`${FRAGMENT_END_TOKEN} -->`)) {
         return i;
       }
     }
@@ -322,7 +305,7 @@ export class FragmentService {
 
   private findMatchingStartLine(lines: string[], startIndex: number): { startLine: number; fragmentId: string } | null {
     for (let i = startIndex; i >= 0; i--) {
-      const match = lines[i].match(/(.*)YOUR CODE: @([^\s]+) ====/);
+      const match = lines[i].match(FRAGMENT_START_REGEX);
       if (match) {
         return { startLine: i, fragmentId: match[2] };
       }

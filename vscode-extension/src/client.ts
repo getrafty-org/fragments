@@ -4,18 +4,18 @@ import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import {
   FragmentAllRangesResult,
-  FragmentApplyResult,
   FragmentChangeVersionResult,
   FragmentDocumentChange,
-  FragmentGenerateMarkerResult,
   FragmentMarkerRangesResult,
   FragmentMethod,
   FragmentRequestMessage,
   FragmentRequestParams,
   FragmentResponseMessage,
   FragmentResponseResults,
-  FragmentSaveResult,
-  FragmentVersionInfo
+  FragmentVersionInfo,
+  InsertMarkerResult,
+  PullFragmentsResult,
+  PushFragmentsResult
 } from 'fragments-protocol';
 
 interface PendingRequest {
@@ -73,7 +73,7 @@ export class FragmentsLanguageClient {
   }
 
   async onDocumentOpen(document: vscode.TextDocument): Promise<void> {
-    await this.sendRequest('textDocument/didOpen', {
+    await this.sendRequest('frag.event.didOpenDocument', {
       textDocument: {
         uri: document.uri.toString(),
         text: document.getText(),
@@ -83,7 +83,7 @@ export class FragmentsLanguageClient {
   }
 
   async onDocumentChange(document: vscode.TextDocument): Promise<void> {
-    await this.sendRequest('textDocument/didChange', {
+    await this.sendRequest('frag.event.didChangeDocument', {
       textDocument: {
         uri: document.uri.toString(),
         version: document.version
@@ -93,14 +93,14 @@ export class FragmentsLanguageClient {
   }
 
   async onDocumentClose(document: vscode.TextDocument): Promise<void> {
-    await this.sendRequest('textDocument/didClose', {
+    await this.sendRequest('frag.event.didCloseDocument', {
       textDocument: { uri: document.uri.toString() }
     });
   }
 
-  async applyFragments(document: vscode.TextDocument): Promise<FragmentApplyResult> {
+  async pullFragments(document: vscode.TextDocument): Promise<PullFragmentsResult> {
     return this.executeForDocument(document.uri.toString(), async () => {
-      const result = await this.sendRequest('fragments/action/applyFragments', {
+      const result = await this.sendRequest('frag.action.pullFragments', {
         textDocument: { uri: document.uri.toString() }
       });
 
@@ -118,9 +118,9 @@ export class FragmentsLanguageClient {
     });
   }
 
-  async saveFragments(document: vscode.TextDocument): Promise<FragmentSaveResult> {
+  async pushFragments(document: vscode.TextDocument): Promise<PushFragmentsResult> {
     return this.executeForDocument(document.uri.toString(), async () => {
-      return this.sendRequest('fragments/action/saveFragments', {
+      return this.sendRequest('frag.action.pushFragments', {
         textDocument: { uri: document.uri.toString() }
       });
     });
@@ -128,18 +128,18 @@ export class FragmentsLanguageClient {
 
   async switchVersion(version: string): Promise<FragmentChangeVersionResult> {
     console.log(`[Client] Changing to version: ${version}`);
-    const result = await this.sendRequest('fragments/action/changeVersion', { version });
+    const result = await this.sendRequest('frag.action.changeVersion', { version });
     await this.applyDocumentChanges(result.documents);
     console.log('[Client] Change version result:', result);
     return result;
   }
 
   async getVersion(): Promise<FragmentVersionInfo> {
-    return this.sendRequest('fragments/query/getVersion', {});
+    return this.sendRequest('frag.query.getVersion', {});
   }
 
-  async generateMarker(languageId: string, lineContent: string, indentation: string): Promise<FragmentGenerateMarkerResult> {
-    return this.sendRequest('fragments/action/generateMarker', {
+  async insertMarker(languageId: string, lineContent: string, indentation: string): Promise<InsertMarkerResult> {
+    return this.sendRequest('frag.action.insertMarker', {
       languageId,
       lineContent,
       indentation
@@ -147,14 +147,14 @@ export class FragmentsLanguageClient {
   }
 
   async getFragmentPositions(document: vscode.TextDocument, line: number): Promise<FragmentMarkerRangesResult> {
-    return this.sendRequest('fragments/query/getFragmentPositions', {
+    return this.sendRequest('frag.query.getFragmentPositions', {
       textDocument: { uri: document.uri.toString() },
       line
     });
   }
 
   async getAllFragmentRanges(document: vscode.TextDocument): Promise<FragmentAllRangesResult> {
-    return this.sendRequest('fragments/query/getAllFragmentRanges', {
+    return this.sendRequest('frag.query.getAllFragmentRanges', {
       textDocument: { uri: document.uri.toString() }
     });
   }
@@ -245,7 +245,7 @@ export class FragmentsLanguageClient {
   }
 
   private async notifyDidPersist(uri: string, revision: number): Promise<void> {
-    await this.sendRequest('fragments/event/didPersistDocument', {
+    await this.sendRequest('frag.event.didPersistDocument', {
       uri,
       revision
     });
