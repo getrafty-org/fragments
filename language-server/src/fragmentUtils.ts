@@ -254,4 +254,8 @@ export class FragmentUtils {
 
     return newLines.join('\n');
   }
+
+  public static containsFragmentMarkers(content: string): boolean {
+    return content.includes('==== YOUR CODE: @');
+  }
 }
