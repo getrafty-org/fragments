@@ -203,10 +203,7 @@ export class FragmentsLanguageClient {
       await this.persistClosedDocument(targetUri, change.content);
     }
 
-    await this.sendRequest('fragments/event/didPersistDocument', {
-      uri: change.uri,
-      revision: change.revision
-    });
+    await this.notifyDidPersist(change.uri, change.revision);
   }
 
   private async applyOpenDocumentChange(document: vscode.TextDocument, content: string): Promise<void> {
@@ -233,8 +230,25 @@ export class FragmentsLanguageClient {
   }
 
   private async persistClosedDocument(uri: vscode.Uri, content: string): Promise<void> {
+    try {
+      const existing = await vscode.workspace.fs.readFile(uri);
+      const existingContent = Buffer.from(existing).toString('utf8');
+      if (existingContent === content) {
+        return;
+      }
+    } catch {
+      // File may not exist yet; proceed with write.
+    }
+
     const buffer = Buffer.from(content, 'utf8');
     await vscode.workspace.fs.writeFile(uri, buffer);
+  }
+
+  private async notifyDidPersist(uri: string, revision: number): Promise<void> {
+    await this.sendRequest('fragments/event/didPersistDocument', {
+      uri,
+      revision
+    });
   }
 
   private async sendRequest<TMethod extends FragmentMethod>(

@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { pathToFileURL, fileURLToPath } from 'url';
+import { pathToFileURL } from 'url';
 import { DocumentManager } from './documentManager';
+import { FragmentDiscovery } from './fragmentDiscovery';
 import { FragmentUtils } from './fragmentUtils';
+import { RevisionTracker } from './revisionTracker';
 import { IFragmentStorage } from './storage';
 import {
   ApplyFragmentsParams,
@@ -20,9 +22,9 @@ import {
   FragmentOperationResult,
   FragmentSaveResult,
   FragmentVersionInfo,
+  FragmentRequestParams,
   GenerateMarkerParams,
   InitParams,
-  FragmentRequestParams,
   SaveFragmentsParams
 } from 'fragments-protocol';
 
@@ -38,11 +40,13 @@ export class FragmentService {
     private readonly documents: DocumentManager,
     private readonly storage: IFragmentStorage,
     private readonly workspaceRoot: string
-  ) {}
+  ) {
+    this.discovery = new FragmentDiscovery(workspaceRoot);
+    this.revisions = new RevisionTracker();
+  }
 
-  private readonly fileRevisions = new Map<string, number>();
-  private readonly pendingPersistRevisions = new Map<string, number>();
-  private readonly ignoredDirectories = new Set(['.git', 'node_modules', 'dist', 'out', 'build']);
+  private readonly discovery: FragmentDiscovery;
+  private readonly revisions: RevisionTracker;
 
   async applyFragments(params: ApplyFragmentsParams): Promise<FragmentApplyResult> {
     const resolution = await this.resolveContent(params);
@@ -124,58 +128,43 @@ export class FragmentService {
   async changeVersion(params: ChangeVersionParams): Promise<FragmentChangeVersionResult> {
     await this.storage.switchVersion(params.version);
 
-    const filesWithFragments = await this.discoverFragmentFiles();
-    const absoluteFiles = new Set(filesWithFragments.map(file => this.ensureAbsoluteFilePath(file)));
-
-    for (const document of this.documents.entries()) {
-      const docPath = this.filePathFromUri(document.uri);
-      if (!docPath || absoluteFiles.has(docPath)) {
-        continue;
-      }
-
-      const fragments = FragmentUtils.parseFragmentsWithLines(document.content);
-      if (fragments.length === 0) {
-        continue;
-      }
-
-      absoluteFiles.add(docPath);
-      filesWithFragments.push(docPath);
-    }
-    const seenUris = new Set<string>();
+    const processedUris = new Set<string>();
     const documentChanges: FragmentDocumentChange[] = [];
 
-    for (const filePath of filesWithFragments) {
-      const absolutePath = this.ensureAbsoluteFilePath(filePath);
-      const uri = pathToFileURL(absolutePath).toString();
-      seenUris.add(uri);
+    const openDocuments = this.documents
+      .entries()
+      .filter(document => FragmentUtils.containsFragmentMarkers(document.content));
 
-      const isOpen = Boolean(this.documents.get(uri));
-      const result = await this.applyFragments(
-        isOpen ? { textDocument: { uri } } : { filePath: absolutePath }
-      );
-
-      const revision = (this.fileRevisions.get(uri) ?? 0) + 1;
-      this.fileRevisions.set(uri, revision);
-      this.pendingPersistRevisions.set(uri, revision);
+    for (const document of openDocuments) {
+      const result = await this.applyFragments({ textDocument: { uri: document.uri } });
+      const revision = this.revisions.nextRevision(document.uri);
 
       documentChanges.push({
-        uri,
+        uri: document.uri,
         content: result.newContent,
         revision
       });
+      processedUris.add(document.uri);
     }
 
-    const removedUris: string[] = [];
-    for (const [trackedUri] of this.fileRevisions) {
-      if (!seenUris.has(trackedUri)) {
-        removedUris.push(trackedUri);
+    const discoveredFiles = await this.discovery.listFragmentFiles();
+    for (const file of discoveredFiles) {
+      if (processedUris.has(file.uri)) {
+        continue;
       }
+
+      const result = await this.applyFragments({ filePath: file.path });
+      const revision = this.revisions.nextRevision(file.uri);
+
+      documentChanges.push({
+        uri: file.uri,
+        content: result.newContent,
+        revision
+      });
+      processedUris.add(file.uri);
     }
 
-    for (const uri of removedUris) {
-      this.fileRevisions.delete(uri);
-      this.pendingPersistRevisions.delete(uri);
-    }
+    const removedUris = this.revisions.prune(processedUris);
 
     return {
       success: true,
@@ -186,11 +175,8 @@ export class FragmentService {
   }
 
   acknowledgePersist(params: DidPersistDocumentParams): FragmentOperationResult {
-    const expectedRevision = this.pendingPersistRevisions.get(params.uri);
-
-    if (expectedRevision !== undefined && expectedRevision === params.revision) {
-      this.pendingPersistRevisions.delete(params.uri);
-      this.fileRevisions.set(params.uri, params.revision);
+    const acknowledged = this.revisions.acknowledge(params.uri, params.revision);
+    if (acknowledged) {
       this.documents.markSavedIfPresent(params.uri);
     }
 
@@ -299,63 +285,6 @@ export class FragmentService {
 
   private ensureAbsoluteFilePath(filePath: string): string {
     return path.isAbsolute(filePath) ? filePath : path.join(this.workspaceRoot, filePath);
-  }
-
-  private filePathFromUri(uri: string): string | null {
-    try {
-      return this.ensureAbsoluteFilePath(fileURLToPath(uri));
-    } catch {
-      return null;
-    }
-  }
-
-  private async discoverFragmentFiles(): Promise<string[]> {
-    const results: string[] = [];
-    await this.walkForFragments(this.workspaceRoot, results);
-    return results;
-  }
-
-  private async walkForFragments(directory: string, results: string[]): Promise<void> {
-    let entries: fs.Dirent[];
-
-    try {
-      entries = await fs.promises.readdir(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (this.ignoredDirectories.has(entry.name)) {
-        continue;
-      }
-
-      const fullPath = path.join(directory, entry.name);
-
-      if (entry.isDirectory()) {
-        await this.walkForFragments(fullPath, results);
-        continue;
-      }
-
-      if (!entry.isFile()) {
-        continue;
-      }
-
-      let content: string;
-      try {
-        content = await fs.promises.readFile(fullPath, 'utf-8');
-      } catch {
-        continue;
-      }
-
-      if (!content.includes('==== YOUR CODE: @')) {
-        continue;
-      }
-
-      const fragments = FragmentUtils.parseFragmentsWithLines(content);
-      if (fragments.length > 0) {
-        results.push(fullPath);
-      }
-    }
   }
 
   private async resolveContent(params: ApplyFragmentsParams | SaveFragmentsParams): Promise<ContentResolution> {
