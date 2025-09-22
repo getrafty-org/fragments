@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import {
   FragmentAllRangesResult,
   FragmentApplyResult,
+  FragmentChangeVersionResult,
+  FragmentDocumentChange,
   FragmentGenerateMarkerResult,
   FragmentMarkerRangesResult,
   FragmentMethod,
@@ -12,7 +15,6 @@ import {
   FragmentResponseMessage,
   FragmentResponseResults,
   FragmentSaveResult,
-  FragmentSwitchVersionResult,
   FragmentVersionInfo
 } from 'fragments-protocol';
 
@@ -27,13 +29,15 @@ export class FragmentsLanguageClient {
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private readonly operationQueue = new Map<string, Promise<unknown>>();
 
+  constructor(private readonly extensionRoot: string) {}
+
   async start(): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('No workspace folder found');
     }
 
-    const serverPath = path.join(workspaceFolder.uri.fsPath, 'language-server', 'dist', 'server.js');
+    const serverPath = this.resolveServerPath(workspaceFolder.uri.fsPath);
     this.serverProcess = spawn('node', [serverPath], {
       stdio: ['pipe', 'pipe', 'inherit'],
       cwd: workspaceFolder.uri.fsPath
@@ -96,7 +100,7 @@ export class FragmentsLanguageClient {
 
   async applyFragments(document: vscode.TextDocument): Promise<FragmentApplyResult> {
     return this.executeForDocument(document.uri.toString(), async () => {
-      const result = await this.sendRequest('fragments/apply', {
+      const result = await this.sendRequest('fragments/action/applyFragments', {
         textDocument: { uri: document.uri.toString() }
       });
 
@@ -116,25 +120,26 @@ export class FragmentsLanguageClient {
 
   async saveFragments(document: vscode.TextDocument): Promise<FragmentSaveResult> {
     return this.executeForDocument(document.uri.toString(), async () => {
-      return this.sendRequest('fragments/save', {
+      return this.sendRequest('fragments/action/saveFragments', {
         textDocument: { uri: document.uri.toString() }
       });
     });
   }
 
-  async switchVersion(version: string): Promise<FragmentSwitchVersionResult> {
-    console.log(`[Client] Switching to version: ${version}`);
-    const result = await this.sendRequest('fragments/switchVersion', { version });
-    console.log('[Client] Switch result:', result);
+  async switchVersion(version: string): Promise<FragmentChangeVersionResult> {
+    console.log(`[Client] Changing to version: ${version}`);
+    const result = await this.sendRequest('fragments/action/changeVersion', { version });
+    await this.applyDocumentChanges(result.documents);
+    console.log('[Client] Change version result:', result);
     return result;
   }
 
   async getVersion(): Promise<FragmentVersionInfo> {
-    return this.sendRequest('fragments/getVersion', {});
+    return this.sendRequest('fragments/query/getVersion', {});
   }
 
   async generateMarker(languageId: string, lineContent: string, indentation: string): Promise<FragmentGenerateMarkerResult> {
-    return this.sendRequest('fragments/generateMarker', {
+    return this.sendRequest('fragments/action/generateMarker', {
       languageId,
       lineContent,
       indentation
@@ -142,20 +147,94 @@ export class FragmentsLanguageClient {
   }
 
   async getFragmentPositions(document: vscode.TextDocument, line: number): Promise<FragmentMarkerRangesResult> {
-    return this.sendRequest('fragments/getFragmentPositions', {
+    return this.sendRequest('fragments/query/getFragmentPositions', {
       textDocument: { uri: document.uri.toString() },
       line
     });
   }
 
   async getAllFragmentRanges(document: vscode.TextDocument): Promise<FragmentAllRangesResult> {
-    return this.sendRequest('fragments/getAllFragmentRanges', {
+    return this.sendRequest('fragments/query/getAllFragmentRanges', {
       textDocument: { uri: document.uri.toString() }
     });
   }
 
   dispose(): void {
     void this.stop();
+  }
+
+  private resolveServerPath(workspaceRoot: string): string {
+    const candidateRoots = [
+      path.join(workspaceRoot, 'language-server'),
+      path.join(this.extensionRoot, '..', 'language-server'),
+      path.join(this.extensionRoot, 'language-server')
+    ];
+
+    const candidatePaths: string[] = [];
+    for (const root of candidateRoots) {
+      candidatePaths.push(
+        path.join(root, 'dist', 'server.js'),
+        path.join(root, 'dist', 'src', 'server.js')
+      );
+    }
+
+    for (const candidate of candidatePaths) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    throw new Error('Unable to locate fragments language server bundle. Build the project or adjust configuration.');
+  }
+
+  private async applyDocumentChanges(changes: FragmentDocumentChange[]): Promise<void> {
+    for (const change of changes) {
+      await this.executeForDocument(change.uri, async () => this.applyDocumentChange(change));
+    }
+  }
+
+  private async applyDocumentChange(change: FragmentDocumentChange): Promise<void> {
+    const targetUri = vscode.Uri.parse(change.uri);
+    const openDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === change.uri);
+
+    if (openDocument) {
+      await this.applyOpenDocumentChange(openDocument, change.content);
+    } else {
+      await this.persistClosedDocument(targetUri, change.content);
+    }
+
+    await this.sendRequest('fragments/event/didPersistDocument', {
+      uri: change.uri,
+      revision: change.revision
+    });
+  }
+
+  private async applyOpenDocumentChange(document: vscode.TextDocument, content: string): Promise<void> {
+    if (document.getText() === content) {
+      if (document.isDirty) {
+        await document.save();
+      }
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
+    edit.replace(document.uri, fullRange, content);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      throw new Error(`Failed to apply fragment update to ${document.uri.toString()}`);
+    }
+
+    const saved = await document.save();
+    if (!saved) {
+      throw new Error(`Failed to save fragment update to ${document.uri.toString()}`);
+    }
+  }
+
+  private async persistClosedDocument(uri: vscode.Uri, content: string): Promise<void> {
+    const buffer = Buffer.from(content, 'utf8');
+    await vscode.workspace.fs.writeFile(uri, buffer);
   }
 
   private async sendRequest<TMethod extends FragmentMethod>(

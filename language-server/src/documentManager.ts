@@ -44,6 +44,16 @@ export class DocumentManager {
     return existing;
   }
 
+  markSavedIfPresent(uri: string): void {
+    const existing = this.documents.get(uri);
+    if (!existing) {
+      return;
+    }
+
+    existing.hasUnsavedChanges = false;
+    this.documents.set(uri, { ...existing });
+  }
+
   get(uri: string): DocumentState | undefined {
     const doc = this.documents.get(uri);
     return doc ? { ...doc } : undefined;

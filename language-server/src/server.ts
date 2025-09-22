@@ -6,6 +6,8 @@ import { DocumentManager } from './documentManager';
 import { FragmentService } from './fragmentService';
 import {
   ApplyFragmentsParams,
+  ChangeVersionParams,
+  DidPersistDocumentParams,
   FragmentHandlers,
   FragmentMethod,
   FragmentOperationResult,
@@ -14,7 +16,6 @@ import {
   FragmentRequestParams,
   GenerateMarkerParams,
   SaveFragmentsParams,
-  SwitchVersionParams,
   TextDocumentDidChangeParams,
   TextDocumentDidCloseParams,
   TextDocumentDidOpenParams
@@ -28,7 +29,7 @@ export class FragmentsServer {
 
   constructor(storageFile: string) {
     this.storage = new FragmentStorage(storageFile);
-    this.service = new FragmentService(this.documents, this.storage);
+    this.service = new FragmentService(this.documents, this.storage, process.cwd());
     this.handlers = this.createHandlers();
   }
 
@@ -78,16 +79,20 @@ export class FragmentsServer {
       'textDocument/didOpen': (params: TextDocumentDidOpenParams) => this.handleTextDocumentDidOpen(params),
       'textDocument/didChange': (params: TextDocumentDidChangeParams) => this.handleTextDocumentDidChange(params),
       'textDocument/didClose': (params: TextDocumentDidCloseParams) => this.handleTextDocumentDidClose(params),
-      'fragments/apply': (params: ApplyFragmentsParams) => this.service.applyFragments(params),
-      'fragments/save': (params: SaveFragmentsParams) => this.service.saveFragments(params),
-      'fragments/switchVersion': (params: SwitchVersionParams) => this.handleSwitchVersion(params),
-      'fragments/generateMarker': (params: GenerateMarkerParams) => this.service.generateMarker(params),
-      'fragments/getVersion': () => this.service.getVersion(),
-      'fragments/getFragmentPositions': (params: FragmentRequestParams['fragments/getFragmentPositions']) =>
-        this.service.getFragmentPositions(params),
-      'fragments/getAllFragmentRanges': (params: FragmentRequestParams['fragments/getAllFragmentRanges']) =>
-        this.service.getAllFragmentRanges(params),
-      'fragments/init': (params: FragmentRequestParams['fragments/init']) => this.service.init(params)
+      'fragments/action/applyFragments': (params: ApplyFragmentsParams) => this.service.applyFragments(params),
+      'fragments/action/saveFragments': (params: SaveFragmentsParams) => this.service.saveFragments(params),
+      'fragments/action/changeVersion': (params: ChangeVersionParams) => this.handleChangeVersion(params),
+      'fragments/action/generateMarker': (params: GenerateMarkerParams) => this.service.generateMarker(params),
+      'fragments/action/init': (params: FragmentRequestParams['fragments/action/init']) => this.service.init(params),
+      'fragments/query/getVersion': () => this.service.getVersion(),
+      'fragments/query/getFragmentPositions': (
+        params: FragmentRequestParams['fragments/query/getFragmentPositions']
+      ) => this.service.getFragmentPositions(params),
+      'fragments/query/getAllFragmentRanges': (
+        params: FragmentRequestParams['fragments/query/getAllFragmentRanges']
+      ) => this.service.getAllFragmentRanges(params),
+      'fragments/event/didPersistDocument': (params: DidPersistDocumentParams) =>
+        Promise.resolve(this.service.acknowledgePersist(params))
     };
   }
 
@@ -110,13 +115,13 @@ export class FragmentsServer {
     return { success: true };
   }
 
-  private async handleSwitchVersion(params: SwitchVersionParams) {
+  private async handleChangeVersion(params: ChangeVersionParams) {
     console.error(`[Server] Switching to version: ${params.version}`);
     const openUris = this.documents.entries().map(doc => doc.uri);
     console.error(`[Server] Open files: ${openUris}`);
 
-    const result = await this.service.switchVersion(params);
-    console.error(`[Server] Switch complete. Updated ${result.updatedDocuments.length} documents`);
+    const result = await this.service.changeVersion(params);
+    console.error(`[Server] Switch complete. Updated ${result.documents.length} documents`);
     return result;
   }
 }
