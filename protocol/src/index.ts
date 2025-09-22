@@ -2,14 +2,15 @@ export type FragmentMethod =
   | 'textDocument/didOpen'
   | 'textDocument/didChange'
   | 'textDocument/didClose'
-  | 'fragments/apply'
-  | 'fragments/save'
-  | 'fragments/switchVersion'
-  | 'fragments/generateMarker'
-  | 'fragments/getVersion'
-  | 'fragments/getFragmentPositions'
-  | 'fragments/getAllFragmentRanges'
-  | 'fragments/init';
+  | 'fragments/action/applyFragments'
+  | 'fragments/action/saveFragments'
+  | 'fragments/action/changeVersion'
+  | 'fragments/action/generateMarker'
+  | 'fragments/action/init'
+  | 'fragments/query/getVersion'
+  | 'fragments/query/getFragmentPositions'
+  | 'fragments/query/getAllFragmentRanges'
+  | 'fragments/event/didPersistDocument';
 
 export interface FragmentRequestMessage<TMethod extends FragmentMethod = FragmentMethod> {
   id: number;
@@ -95,18 +96,21 @@ export interface FragmentSaveFailure {
 
 export type FragmentSaveResult = FragmentSaveSuccess | FragmentSaveFailure;
 
-export interface SwitchVersionParams {
+export interface ChangeVersionParams {
   version: string;
 }
 
-export interface FragmentSwitchVersionResult {
+export interface FragmentDocumentChange {
+  uri: string;
+  content: string;
+  revision: number;
+}
+
+export interface FragmentChangeVersionResult {
   success: true;
   version: string;
-  updatedDocuments: Array<{
-    uri: string;
-    result?: FragmentApplyResult;
-    error?: string;
-  }>;
+  documents: FragmentDocumentChange[];
+  removedUris: string[];
 }
 
 export interface GenerateMarkerParams {
@@ -166,32 +170,39 @@ export interface FragmentOperationResult {
   success: true;
 }
 
+export interface DidPersistDocumentParams {
+  uri: string;
+  revision: number;
+}
+
 export type FragmentRequestParams = {
   'textDocument/didOpen': TextDocumentDidOpenParams;
   'textDocument/didChange': TextDocumentDidChangeParams;
   'textDocument/didClose': TextDocumentDidCloseParams;
-  'fragments/apply': ApplyFragmentsParams;
-  'fragments/save': SaveFragmentsParams;
-  'fragments/switchVersion': SwitchVersionParams;
-  'fragments/generateMarker': GenerateMarkerParams;
-  'fragments/getVersion': Record<string, never>;
-  'fragments/getFragmentPositions': { textDocument: TextDocumentIdentifier; line: number };
-  'fragments/getAllFragmentRanges': { textDocument: TextDocumentIdentifier };
-  'fragments/init': InitParams;
+  'fragments/action/applyFragments': ApplyFragmentsParams;
+  'fragments/action/saveFragments': SaveFragmentsParams;
+  'fragments/action/changeVersion': ChangeVersionParams;
+  'fragments/action/generateMarker': GenerateMarkerParams;
+  'fragments/action/init': InitParams;
+  'fragments/query/getVersion': Record<string, never>;
+  'fragments/query/getFragmentPositions': { textDocument: TextDocumentIdentifier; line: number };
+  'fragments/query/getAllFragmentRanges': { textDocument: TextDocumentIdentifier };
+  'fragments/event/didPersistDocument': DidPersistDocumentParams;
 };
 
 export type FragmentResponseResults = {
   'textDocument/didOpen': FragmentOperationResult;
   'textDocument/didChange': FragmentOperationResult;
   'textDocument/didClose': FragmentOperationResult;
-  'fragments/apply': FragmentApplyResult;
-  'fragments/save': FragmentSaveResult;
-  'fragments/switchVersion': FragmentSwitchVersionResult;
-  'fragments/generateMarker': FragmentGenerateMarkerResult;
-  'fragments/getVersion': FragmentVersionInfo;
-  'fragments/getFragmentPositions': FragmentMarkerRangesResult;
-  'fragments/getAllFragmentRanges': FragmentAllRangesResult;
-  'fragments/init': FragmentInitResult;
+  'fragments/action/applyFragments': FragmentApplyResult;
+  'fragments/action/saveFragments': FragmentSaveResult;
+  'fragments/action/changeVersion': FragmentChangeVersionResult;
+  'fragments/action/generateMarker': FragmentGenerateMarkerResult;
+  'fragments/action/init': FragmentInitResult;
+  'fragments/query/getVersion': FragmentVersionInfo;
+  'fragments/query/getFragmentPositions': FragmentMarkerRangesResult;
+  'fragments/query/getAllFragmentRanges': FragmentAllRangesResult;
+  'fragments/event/didPersistDocument': FragmentOperationResult;
 };
 
 export type FragmentRequestHandler<TMethod extends FragmentMethod> = (

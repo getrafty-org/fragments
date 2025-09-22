@@ -46,7 +46,7 @@ let diagnosticsManager;
 let hoverHighlighter;
 let statusBarManager;
 async function activate(context) {
-    fragmentsClient = new client_1.FragmentsLanguageClient();
+    fragmentsClient = new client_1.FragmentsLanguageClient(context.extensionUri.fsPath);
     diagnosticsManager = new diagnosticsManager_1.FragmentDiagnosticsManager();
     hoverHighlighter = new hoverHighlighter_1.FragmentHoverHighlighter(fragmentsClient);
     statusBarManager = new statusBarManager_1.FragmentStatusBarManager(fragmentsClient);
@@ -240,24 +240,16 @@ function registerSwitchVersionCommand() {
             }
             const result = await fragmentsClient.switchVersion(selectedItem.version);
             if (result.success) {
-                let appliedCount = 0;
-                for (const document of openDocuments) {
-                    try {
-                        await fragmentsClient.onDocumentChange(document);
-                        const applyResult = await fragmentsClient.applyFragments(document);
-                        if (applyResult.hasChanges) {
-                            appliedCount++;
-                            await document.save();
-                        }
-                    }
-                    catch (error) {
-                        console.warn(`Failed to apply fragments to ${document.fileName}:`, error);
-                    }
+                const updatedCount = result.documents.length;
+                const removedCount = result.removedUris.length;
+                const summaryParts = [`Switched to version '${selectedItem.version}'`];
+                if (updatedCount > 0) {
+                    summaryParts.push(`${updatedCount} files updated`);
                 }
-                const updatedCount = result.updatedDocuments?.length || 0;
-                const filesMsg = updatedCount > 0 ? ` (${updatedCount} files updated)` : '';
-                const appliedMsg = appliedCount > 0 ? ` ${appliedCount} open files refreshed.` : '';
-                vscode.window.showInformationMessage(`Switched to version '${selectedItem.version}'${filesMsg}.${appliedMsg}`);
+                if (removedCount > 0) {
+                    summaryParts.push(`${removedCount} files removed`);
+                }
+                vscode.window.showInformationMessage(summaryParts.join('; '));
                 await statusBarManager.refresh();
             }
         }

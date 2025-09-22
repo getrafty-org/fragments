@@ -1,24 +1,29 @@
 import * as fs from 'fs';
+import * as path from 'path';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { DocumentManager } from './documentManager';
 import { FragmentUtils } from './fragmentUtils';
 import { IFragmentStorage } from './storage';
 import {
   ApplyFragmentsParams,
+  ChangeVersionParams,
+  DidPersistDocumentParams,
   FragmentAllRangesResult,
   FragmentApplyResult,
+  FragmentChangeVersionResult,
+  FragmentDocumentChange,
   FragmentGenerateMarkerResult,
   FragmentInitResult,
   FragmentIssue,
   FragmentMarkerRange,
   FragmentMarkerRangesResult,
+  FragmentOperationResult,
   FragmentSaveResult,
-  FragmentSwitchVersionResult,
   FragmentVersionInfo,
   GenerateMarkerParams,
   InitParams,
   FragmentRequestParams,
-  SaveFragmentsParams,
-  SwitchVersionParams
+  SaveFragmentsParams
 } from 'fragments-protocol';
 
 interface ContentResolution {
@@ -31,11 +36,16 @@ interface ContentResolution {
 export class FragmentService {
   constructor(
     private readonly documents: DocumentManager,
-    private readonly storage: IFragmentStorage
+    private readonly storage: IFragmentStorage,
+    private readonly workspaceRoot: string
   ) {}
 
+  private readonly fileRevisions = new Map<string, number>();
+  private readonly pendingPersistRevisions = new Map<string, number>();
+  private readonly ignoredDirectories = new Set(['.git', 'node_modules', 'dist', 'out', 'build']);
+
   async applyFragments(params: ApplyFragmentsParams): Promise<FragmentApplyResult> {
-    const resolution = this.resolveContent(params);
+    const resolution = await this.resolveContent(params);
     const data = await this.storage.load();
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
 
@@ -56,8 +66,6 @@ export class FragmentService {
 
     if (resolution.type === 'document' && resolution.uri) {
       this.documents.updateContent(resolution.uri, updatedContent);
-    } else if (resolution.filePath) {
-      fs.writeFileSync(resolution.filePath, updatedContent, 'utf-8');
     }
 
     return {
@@ -69,7 +77,7 @@ export class FragmentService {
   }
 
   async saveFragments(params: SaveFragmentsParams): Promise<FragmentSaveResult> {
-    const resolution = this.resolveContent(params);
+    const resolution = await this.resolveContent(params);
     const data = await this.storage.load();
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
     const nestedFragments = FragmentUtils.findNestedFragments(resolution.content);
@@ -113,27 +121,80 @@ export class FragmentService {
     };
   }
 
-  async switchVersion(params: SwitchVersionParams): Promise<FragmentSwitchVersionResult> {
+  async changeVersion(params: ChangeVersionParams): Promise<FragmentChangeVersionResult> {
     await this.storage.switchVersion(params.version);
 
-    const results: Array<{ uri: string; result?: FragmentApplyResult; error?: string }> = [];
-    for (const doc of this.documents.entries()) {
-      try {
-        const result = await this.applyFragments({ textDocument: { uri: doc.uri } });
-        results.push({ uri: doc.uri, result });
-      } catch (error) {
-        results.push({
-          uri: doc.uri,
-          error: error instanceof Error ? error.message : String(error)
-        });
+    const filesWithFragments = await this.discoverFragmentFiles();
+    const absoluteFiles = new Set(filesWithFragments.map(file => this.ensureAbsoluteFilePath(file)));
+
+    for (const document of this.documents.entries()) {
+      const docPath = this.filePathFromUri(document.uri);
+      if (!docPath || absoluteFiles.has(docPath)) {
+        continue;
       }
+
+      const fragments = FragmentUtils.parseFragmentsWithLines(document.content);
+      if (fragments.length === 0) {
+        continue;
+      }
+
+      absoluteFiles.add(docPath);
+      filesWithFragments.push(docPath);
+    }
+    const seenUris = new Set<string>();
+    const documentChanges: FragmentDocumentChange[] = [];
+
+    for (const filePath of filesWithFragments) {
+      const absolutePath = this.ensureAbsoluteFilePath(filePath);
+      const uri = pathToFileURL(absolutePath).toString();
+      seenUris.add(uri);
+
+      const isOpen = Boolean(this.documents.get(uri));
+      const result = await this.applyFragments(
+        isOpen ? { textDocument: { uri } } : { filePath: absolutePath }
+      );
+
+      const revision = (this.fileRevisions.get(uri) ?? 0) + 1;
+      this.fileRevisions.set(uri, revision);
+      this.pendingPersistRevisions.set(uri, revision);
+
+      documentChanges.push({
+        uri,
+        content: result.newContent,
+        revision
+      });
+    }
+
+    const removedUris: string[] = [];
+    for (const [trackedUri] of this.fileRevisions) {
+      if (!seenUris.has(trackedUri)) {
+        removedUris.push(trackedUri);
+      }
+    }
+
+    for (const uri of removedUris) {
+      this.fileRevisions.delete(uri);
+      this.pendingPersistRevisions.delete(uri);
     }
 
     return {
       success: true,
       version: params.version,
-      updatedDocuments: results
+      documents: documentChanges,
+      removedUris
     };
+  }
+
+  acknowledgePersist(params: DidPersistDocumentParams): FragmentOperationResult {
+    const expectedRevision = this.pendingPersistRevisions.get(params.uri);
+
+    if (expectedRevision !== undefined && expectedRevision === params.revision) {
+      this.pendingPersistRevisions.delete(params.uri);
+      this.fileRevisions.set(params.uri, params.revision);
+      this.documents.markSavedIfPresent(params.uri);
+    }
+
+    return { success: true };
   }
 
   async generateMarker(params: GenerateMarkerParams): Promise<FragmentGenerateMarkerResult> {
@@ -169,7 +230,7 @@ export class FragmentService {
   }
 
   async getFragmentPositions(
-    params: FragmentRequestParams['fragments/getFragmentPositions']
+    params: FragmentRequestParams['fragments/query/getFragmentPositions']
   ): Promise<FragmentMarkerRangesResult> {
     const document = this.documents.getRequired(params.textDocument.uri);
     const lines = document.content.split('\n');
@@ -215,7 +276,7 @@ export class FragmentService {
   }
 
   async getAllFragmentRanges(
-    params: FragmentRequestParams['fragments/getAllFragmentRanges']
+    params: FragmentRequestParams['fragments/query/getAllFragmentRanges']
   ): Promise<FragmentAllRangesResult> {
     const document = this.documents.getRequired(params.textDocument.uri);
     const fragments = FragmentUtils.parseFragmentsWithLines(document.content);
@@ -236,7 +297,68 @@ export class FragmentService {
     return { success: true, message: 'Fragments initialized successfully' };
   }
 
-  private resolveContent(params: ApplyFragmentsParams | SaveFragmentsParams): ContentResolution {
+  private ensureAbsoluteFilePath(filePath: string): string {
+    return path.isAbsolute(filePath) ? filePath : path.join(this.workspaceRoot, filePath);
+  }
+
+  private filePathFromUri(uri: string): string | null {
+    try {
+      return this.ensureAbsoluteFilePath(fileURLToPath(uri));
+    } catch {
+      return null;
+    }
+  }
+
+  private async discoverFragmentFiles(): Promise<string[]> {
+    const results: string[] = [];
+    await this.walkForFragments(this.workspaceRoot, results);
+    return results;
+  }
+
+  private async walkForFragments(directory: string, results: string[]): Promise<void> {
+    let entries: fs.Dirent[];
+
+    try {
+      entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (this.ignoredDirectories.has(entry.name)) {
+        continue;
+      }
+
+      const fullPath = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        await this.walkForFragments(fullPath, results);
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      let content: string;
+      try {
+        content = await fs.promises.readFile(fullPath, 'utf-8');
+      } catch {
+        continue;
+      }
+
+      if (!content.includes('==== YOUR CODE: @')) {
+        continue;
+      }
+
+      const fragments = FragmentUtils.parseFragmentsWithLines(content);
+      if (fragments.length > 0) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  private async resolveContent(params: ApplyFragmentsParams | SaveFragmentsParams): Promise<ContentResolution> {
     if (params.textDocument) {
       const document = this.documents.getRequired(params.textDocument.uri);
       return {
@@ -247,11 +369,13 @@ export class FragmentService {
     }
 
     if (params.filePath) {
+      const absolutePath = this.ensureAbsoluteFilePath(params.filePath);
+      const content = await fs.promises.readFile(absolutePath, 'utf-8');
       return {
         type: 'file',
-        content: fs.readFileSync(params.filePath, 'utf-8'),
-        filePath: params.filePath,
-        uri: `file://${params.filePath}`
+        content,
+        filePath: absolutePath,
+        uri: pathToFileURL(absolutePath).toString()
       };
     }
 

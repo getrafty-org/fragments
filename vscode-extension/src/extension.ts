@@ -5,8 +5,8 @@ import { FragmentHoverHighlighter } from './services/hoverHighlighter';
 import { FragmentStatusBarManager } from './services/statusBarManager';
 import {
   FragmentApplyResult,
+  FragmentChangeVersionResult,
   FragmentSaveResult,
-  FragmentSwitchVersionResult,
   FragmentVersionInfo
 } from 'fragments-protocol';
 import { isProcessableDocument } from './utils/documentFilters';
@@ -17,7 +17,7 @@ let hoverHighlighter: FragmentHoverHighlighter;
 let statusBarManager: FragmentStatusBarManager;
 
 export async function activate(context: vscode.ExtensionContext) {
-  fragmentsClient = new FragmentsLanguageClient();
+  fragmentsClient = new FragmentsLanguageClient(context.extensionUri.fsPath);
   diagnosticsManager = new FragmentDiagnosticsManager();
   hoverHighlighter = new FragmentHoverHighlighter(fragmentsClient);
   statusBarManager = new FragmentStatusBarManager(fragmentsClient);
@@ -256,27 +256,22 @@ function registerSwitchVersionCommand(): vscode.Disposable {
         return;
       }
 
-      const result: FragmentSwitchVersionResult = await fragmentsClient.switchVersion(selectedItem.version);
+      const result: FragmentChangeVersionResult = await fragmentsClient.switchVersion(selectedItem.version);
 
       if (result.success) {
-        let appliedCount = 0;
-        for (const document of openDocuments) {
-          try {
-            await fragmentsClient.onDocumentChange(document);
-            const applyResult = await fragmentsClient.applyFragments(document);
-            if (applyResult.hasChanges) {
-              appliedCount++;
-              await document.save();
-            }
-          } catch (error) {
-            console.warn(`Failed to apply fragments to ${document.fileName}:`, error);
-          }
+        const updatedCount = result.documents.length;
+        const removedCount = result.removedUris.length;
+        const summaryParts = [`Switched to version '${selectedItem.version}'`];
+
+        if (updatedCount > 0) {
+          summaryParts.push(`${updatedCount} files updated`);
         }
 
-        const updatedCount = result.updatedDocuments?.length || 0;
-        const filesMsg = updatedCount > 0 ? ` (${updatedCount} files updated)` : '';
-        const appliedMsg = appliedCount > 0 ? ` ${appliedCount} open files refreshed.` : '';
-        vscode.window.showInformationMessage(`Switched to version '${selectedItem.version}'${filesMsg}.${appliedMsg}`);
+        if (removedCount > 0) {
+          summaryParts.push(`${removedCount} files removed`);
+        }
+
+        vscode.window.showInformationMessage(summaryParts.join('; '));
         await statusBarManager.refresh();
       }
     } catch (error) {
