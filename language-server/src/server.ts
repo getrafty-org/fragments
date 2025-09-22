@@ -4,21 +4,24 @@ import * as path from 'path';
 import { FragmentStorage, IFragmentStorage } from './storage';
 import { DocumentManager } from './documentManager';
 import { FragmentService } from './fragmentService';
+import { WorkspaceFragmentLocator } from './fragmentFileLocator';
+import { MemoryRevisionState } from './revisionState';
 import {
-  ApplyFragmentsParams,
+  AllRangesParams,
   ChangeVersionParams,
   DidPersistDocumentParams,
+  DidChangeDocumentParams,
+  DidCloseDocumentParams,
+  DidOpenDocumentParams,
   FragmentHandlers,
   FragmentMethod,
   FragmentOperationResult,
   FragmentRequestMessage,
   FragmentResponseMessage,
-  FragmentRequestParams,
-  GenerateMarkerParams,
-  SaveFragmentsParams,
-  TextDocumentDidChangeParams,
-  TextDocumentDidCloseParams,
-  TextDocumentDidOpenParams
+  InsertMarkerParams,
+  MarkerPositionsParams,
+  PullFragmentsParams,
+  PushFragmentsParams
 } from 'fragments-protocol';
 
 export class FragmentsServer {
@@ -29,7 +32,15 @@ export class FragmentsServer {
 
   constructor(storageFile: string) {
     this.storage = new FragmentStorage(storageFile);
-    this.service = new FragmentService(this.documents, this.storage, process.cwd());
+    const workspaceRoot = process.cwd();
+    const fileLocator = new WorkspaceFragmentLocator(workspaceRoot);
+    const revisionState = new MemoryRevisionState();
+    this.service = new FragmentService(
+      this.documents,
+      this.storage,
+      fileLocator,
+      revisionState
+    );
     this.handlers = this.createHandlers();
   }
 
@@ -51,7 +62,6 @@ export class FragmentsServer {
       }
     });
 
-    // Keep process alive
     process.stdin.resume();
   }
 
@@ -76,41 +86,37 @@ export class FragmentsServer {
 
   private createHandlers(): FragmentHandlers {
     return {
-      'textDocument/didOpen': (params: TextDocumentDidOpenParams) => this.handleTextDocumentDidOpen(params),
-      'textDocument/didChange': (params: TextDocumentDidChangeParams) => this.handleTextDocumentDidChange(params),
-      'textDocument/didClose': (params: TextDocumentDidCloseParams) => this.handleTextDocumentDidClose(params),
-      'fragments/action/applyFragments': (params: ApplyFragmentsParams) => this.service.applyFragments(params),
-      'fragments/action/saveFragments': (params: SaveFragmentsParams) => this.service.saveFragments(params),
-      'fragments/action/changeVersion': (params: ChangeVersionParams) => this.handleChangeVersion(params),
-      'fragments/action/generateMarker': (params: GenerateMarkerParams) => this.service.generateMarker(params),
-      'fragments/action/init': (params: FragmentRequestParams['fragments/action/init']) => this.service.init(params),
-      'fragments/query/getVersion': () => this.service.getVersion(),
-      'fragments/query/getFragmentPositions': (
-        params: FragmentRequestParams['fragments/query/getFragmentPositions']
-      ) => this.service.getFragmentPositions(params),
-      'fragments/query/getAllFragmentRanges': (
-        params: FragmentRequestParams['fragments/query/getAllFragmentRanges']
-      ) => this.service.getAllFragmentRanges(params),
-      'fragments/event/didPersistDocument': (params: DidPersistDocumentParams) =>
-        Promise.resolve(this.service.acknowledgePersist(params))
+      'frag.event.didOpenDocument': (params: DidOpenDocumentParams) => this.handleDidOpen(params),
+      'frag.event.didChangeDocument': (params: DidChangeDocumentParams) => this.handleDidChange(params),
+      'frag.event.didCloseDocument': (params: DidCloseDocumentParams) => this.handleDidClose(params),
+      'frag.event.didPersistDocument': (params: DidPersistDocumentParams) =>
+        Promise.resolve(this.service.acknowledgePersist(params)),
+      'frag.action.pullFragments': (params: PullFragmentsParams) => this.service.pullFragments(params),
+      'frag.action.pushFragments': (params: PushFragmentsParams) => this.service.pushFragments(params),
+      'frag.action.changeVersion': (params: ChangeVersionParams) => this.handleChangeVersion(params),
+      'frag.action.insertMarker': (params: InsertMarkerParams) => this.service.insertMarker(params),
+      'frag.query.getVersion': () => this.service.getVersion(),
+      'frag.query.getFragmentPositions': (params: MarkerPositionsParams) =>
+        this.service.getFragmentPositions(params),
+      'frag.query.getAllFragmentRanges': (params: AllRangesParams) =>
+        this.service.getAllFragmentRanges(params)
     };
   }
 
-  // Document lifecycle handlers
-  private async handleTextDocumentDidOpen(params: TextDocumentDidOpenParams): Promise<FragmentOperationResult> {
+  private async handleDidOpen(params: DidOpenDocumentParams): Promise<FragmentOperationResult> {
     const { uri, text, version } = params.textDocument;
     this.documents.open({ uri, content: text, version, hasUnsavedChanges: false });
     return { success: true };
   }
 
-  private async handleTextDocumentDidChange(params: TextDocumentDidChangeParams): Promise<FragmentOperationResult> {
+  private async handleDidChange(params: DidChangeDocumentParams): Promise<FragmentOperationResult> {
     const { uri, version } = params.textDocument;
     const newContent = params.contentChanges[0].text;
     this.documents.applyChange(uri, newContent, version);
     return { success: true };
   }
 
-  private async handleTextDocumentDidClose(params: TextDocumentDidCloseParams): Promise<FragmentOperationResult> {
+  private async handleDidClose(params: DidCloseDocumentParams): Promise<FragmentOperationResult> {
     this.documents.close(params.textDocument.uri);
     return { success: true };
   }
@@ -126,7 +132,6 @@ export class FragmentsServer {
   }
 }
 
-// Main entry point when run as standalone server
 async function main() {
   const projectRoot = process.cwd();
   const storageFile = path.join(projectRoot, '.fragments');

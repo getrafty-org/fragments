@@ -54,7 +54,7 @@ async function activate(context) {
     await fragmentsClient.start();
     hoverHighlighter.register();
     await statusBarManager.initialize();
-    await applyFragmentsToOpenDocuments();
+    await pullFragmentsForOpenDocuments();
     context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(handleDocumentOpen), vscode.workspace.onDidChangeTextDocument(handleDocumentChange), vscode.workspace.onDidCloseTextDocument(handleDocumentClose), vscode.workspace.onDidSaveTextDocument(handleDocumentSave));
     context.subscriptions.push(registerGetVersionCommand(), registerListVersionsCommand(), registerInsertMarkerCommand(), registerSwitchVersionCommand());
 }
@@ -63,12 +63,12 @@ async function deactivate() {
         await fragmentsClient.stop();
     }
 }
-async function applyFragmentsToOpenDocuments() {
+async function pullFragmentsForOpenDocuments() {
     const documents = vscode.workspace.textDocuments.filter(documentFilters_1.isProcessableDocument);
     for (const document of documents) {
         try {
             await fragmentsClient.onDocumentOpen(document);
-            const result = await fragmentsClient.applyFragments(document);
+            const result = await fragmentsClient.pullFragments(document);
             if (result.hasChanges) {
                 await document.save();
             }
@@ -84,7 +84,7 @@ async function handleDocumentOpen(document) {
     }
     await fragmentsClient.onDocumentOpen(document);
     try {
-        const result = await fragmentsClient.applyFragments(document);
+        const result = await fragmentsClient.pullFragments(document);
         if (result.hasChanges) {
             await document.save();
         }
@@ -121,7 +121,7 @@ async function handleDocumentSave(document) {
         return;
     }
     try {
-        const result = await fragmentsClient.saveFragments(document);
+        const result = await fragmentsClient.pushFragments(document);
         if (!result.success && result.issues && result.issues.length > 0) {
             diagnosticsManager.setIssues(document, result.issues);
             vscode.window.showErrorMessage('Nested fragments are not supported. Remove nested fragment markers and save again.');
@@ -182,7 +182,7 @@ function registerInsertMarkerCommand() {
             const lineContent = document.lineAt(position.line).text;
             const indentationMatch = lineContent.match(/^(\s*)/);
             const indentation = indentationMatch ? indentationMatch[1] : '';
-            const result = await fragmentsClient.generateMarker(document.languageId, lineContent, indentation);
+            const result = await fragmentsClient.insertMarker(document.languageId, lineContent, indentation);
             if (result.success) {
                 const lineEndPosition = new vscode.Position(position.line, lineContent.length);
                 await editor.edit((editBuilder) => {

@@ -1,16 +1,15 @@
 export type FragmentMethod =
-  | 'textDocument/didOpen'
-  | 'textDocument/didChange'
-  | 'textDocument/didClose'
-  | 'fragments/action/applyFragments'
-  | 'fragments/action/saveFragments'
-  | 'fragments/action/changeVersion'
-  | 'fragments/action/generateMarker'
-  | 'fragments/action/init'
-  | 'fragments/query/getVersion'
-  | 'fragments/query/getFragmentPositions'
-  | 'fragments/query/getAllFragmentRanges'
-  | 'fragments/event/didPersistDocument';
+  | 'frag.event.didOpenDocument'
+  | 'frag.event.didChangeDocument'
+  | 'frag.event.didCloseDocument'
+  | 'frag.event.didPersistDocument'
+  | 'frag.action.pullFragments'
+  | 'frag.action.pushFragments'
+  | 'frag.action.changeVersion'
+  | 'frag.action.insertMarker'
+  | 'frag.query.getVersion'
+  | 'frag.query.getFragmentPositions'
+  | 'frag.query.getAllFragmentRanges';
 
 export interface FragmentRequestMessage<TMethod extends FragmentMethod = FragmentMethod> {
   id: number;
@@ -38,11 +37,11 @@ export interface TextDocumentItem extends TextDocumentIdentifier {
   version: number;
 }
 
-export interface TextDocumentDidOpenParams {
+export interface DidOpenDocumentParams {
   textDocument: TextDocumentItem;
 }
 
-export interface TextDocumentDidChangeParams {
+export interface DidChangeDocumentParams {
   textDocument: {
     uri: string;
     version: number;
@@ -50,23 +49,23 @@ export interface TextDocumentDidChangeParams {
   contentChanges: Array<{ text: string }>;
 }
 
-export interface TextDocumentDidCloseParams {
+export interface DidCloseDocumentParams {
   textDocument: TextDocumentIdentifier;
 }
 
-export interface ApplyFragmentsParams {
+export interface PullFragmentsParams {
   textDocument?: TextDocumentIdentifier;
   filePath?: string;
 }
 
-export interface FragmentApplyResult {
+export interface PullFragmentsResult {
   success: true;
   newContent: string;
   appliedCount: number;
   hasChanges: boolean;
 }
 
-export interface SaveFragmentsParams {
+export interface PushFragmentsParams {
   textDocument?: TextDocumentIdentifier;
   filePath?: string;
 }
@@ -80,21 +79,21 @@ export interface FragmentIssue {
   message: string;
 }
 
-export interface FragmentSaveSuccess {
+export interface PushFragmentsSuccess {
   success: true;
   activeVersion: string;
   fragmentsSaved: number;
   issues?: undefined;
 }
 
-export interface FragmentSaveFailure {
+export interface PushFragmentsFailure {
   success: false;
   activeVersion: string;
   fragmentsSaved: 0;
   issues: FragmentIssue[];
 }
 
-export type FragmentSaveResult = FragmentSaveSuccess | FragmentSaveFailure;
+export type PushFragmentsResult = PushFragmentsSuccess | PushFragmentsFailure;
 
 export interface ChangeVersionParams {
   version: string;
@@ -113,13 +112,13 @@ export interface FragmentChangeVersionResult {
   removedUris: string[];
 }
 
-export interface GenerateMarkerParams {
+export interface InsertMarkerParams {
   languageId: string;
   lineContent?: string;
   indentation?: string;
 }
 
-export interface FragmentGenerateMarkerResult {
+export interface InsertMarkerResult {
   success: true;
   fragmentId: string;
   markerText: string;
@@ -142,6 +141,11 @@ export interface FragmentMarkerRange {
   fragmentId: string;
 }
 
+export interface MarkerPositionsParams {
+  textDocument: TextDocumentIdentifier;
+  line: number;
+}
+
 export interface FragmentMarkerRangesResult {
   success: true;
   markerRanges: FragmentMarkerRange[];
@@ -156,14 +160,8 @@ export interface FragmentAllRangesResult {
   }>;
 }
 
-export interface InitParams {
-  versions?: string[];
-  activeVersion?: string;
-}
-
-export interface FragmentInitResult {
-  success: true;
-  message: string;
+export interface AllRangesParams {
+  textDocument: TextDocumentIdentifier;
 }
 
 export interface FragmentOperationResult {
@@ -176,33 +174,31 @@ export interface DidPersistDocumentParams {
 }
 
 export type FragmentRequestParams = {
-  'textDocument/didOpen': TextDocumentDidOpenParams;
-  'textDocument/didChange': TextDocumentDidChangeParams;
-  'textDocument/didClose': TextDocumentDidCloseParams;
-  'fragments/action/applyFragments': ApplyFragmentsParams;
-  'fragments/action/saveFragments': SaveFragmentsParams;
-  'fragments/action/changeVersion': ChangeVersionParams;
-  'fragments/action/generateMarker': GenerateMarkerParams;
-  'fragments/action/init': InitParams;
-  'fragments/query/getVersion': Record<string, never>;
-  'fragments/query/getFragmentPositions': { textDocument: TextDocumentIdentifier; line: number };
-  'fragments/query/getAllFragmentRanges': { textDocument: TextDocumentIdentifier };
-  'fragments/event/didPersistDocument': DidPersistDocumentParams;
+  'frag.event.didOpenDocument': DidOpenDocumentParams;
+  'frag.event.didChangeDocument': DidChangeDocumentParams;
+  'frag.event.didCloseDocument': DidCloseDocumentParams;
+  'frag.event.didPersistDocument': DidPersistDocumentParams;
+  'frag.action.pullFragments': PullFragmentsParams;
+  'frag.action.pushFragments': PushFragmentsParams;
+  'frag.action.changeVersion': ChangeVersionParams;
+  'frag.action.insertMarker': InsertMarkerParams;
+  'frag.query.getVersion': Record<string, never>;
+  'frag.query.getFragmentPositions': MarkerPositionsParams;
+  'frag.query.getAllFragmentRanges': AllRangesParams;
 };
 
 export type FragmentResponseResults = {
-  'textDocument/didOpen': FragmentOperationResult;
-  'textDocument/didChange': FragmentOperationResult;
-  'textDocument/didClose': FragmentOperationResult;
-  'fragments/action/applyFragments': FragmentApplyResult;
-  'fragments/action/saveFragments': FragmentSaveResult;
-  'fragments/action/changeVersion': FragmentChangeVersionResult;
-  'fragments/action/generateMarker': FragmentGenerateMarkerResult;
-  'fragments/action/init': FragmentInitResult;
-  'fragments/query/getVersion': FragmentVersionInfo;
-  'fragments/query/getFragmentPositions': FragmentMarkerRangesResult;
-  'fragments/query/getAllFragmentRanges': FragmentAllRangesResult;
-  'fragments/event/didPersistDocument': FragmentOperationResult;
+  'frag.event.didOpenDocument': FragmentOperationResult;
+  'frag.event.didChangeDocument': FragmentOperationResult;
+  'frag.event.didCloseDocument': FragmentOperationResult;
+  'frag.event.didPersistDocument': FragmentOperationResult;
+  'frag.action.pullFragments': PullFragmentsResult;
+  'frag.action.pushFragments': PushFragmentsResult;
+  'frag.action.changeVersion': FragmentChangeVersionResult;
+  'frag.action.insertMarker': InsertMarkerResult;
+  'frag.query.getVersion': FragmentVersionInfo;
+  'frag.query.getFragmentPositions': FragmentMarkerRangesResult;
+  'frag.query.getAllFragmentRanges': FragmentAllRangesResult;
 };
 
 export type FragmentRequestHandler<TMethod extends FragmentMethod> = (
