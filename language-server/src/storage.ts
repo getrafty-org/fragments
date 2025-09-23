@@ -1,14 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as zlib from 'zlib';
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import { FragmentId } from 'fragments-protocol';
 
 export interface Storage {
   isOpen(): boolean;
   open(versions?: string[], activeVersion?: string): Promise<void>;
-  ensureFragment(fragmentId: string, currentContent?: string): Promise<void>;
-  updateFragment(fragmentId: string, version: string, content: string): Promise<void>;
-  getFragmentContent(fragmentId: string, version: string): Promise<string | null>;
+  ensureFragment(fragmentId: FragmentId, currentContent?: string): Promise<void>;
+  updateFragment(fragmentId: FragmentId, version: string, content: string): Promise<void>;
+  getFragmentContent(fragmentId: FragmentId, version: string): Promise<string | null>;
   getActiveVersion(): Promise<string>;
   getAvailableVersions(): Promise<string[]>;
   switchVersion(versionName: string): Promise<void>;
@@ -21,9 +21,9 @@ const HEADER_SIZE = 256;
 const VERSION_TABLE_OFFSET = 64;
 const VERSION_ENTRY_SIZE = 32;
 const MAX_VERSIONS = Math.floor((HEADER_SIZE - VERSION_TABLE_OFFSET) / VERSION_ENTRY_SIZE);
-const INITIAL_INDEX_CAPACITY = 128;
-const FRAGMENT_ID_SIZE = 32;
-const INDEX_ENTRY_SIZE = 48;
+const INITIAL_INDEX_CAPACITY = 1024;
+const FRAGMENT_ID_SIZE = 2;
+const INDEX_ENTRY_SIZE = 10;
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const HEADER_FLAG_ENCRYPTED = 0x01;
@@ -46,13 +46,15 @@ interface DecodedIndexEntry {
   used: boolean;
   encrypted: boolean;
   offset: number;
+  length: number;
 }
 
 interface IndexEntryRecord {
   slot: number;
-  fragmentId: string;
+  fragmentId: FragmentId;
   idBuffer: Buffer;
   offset: number;
+  length: number;
   used: boolean;
   encrypted: boolean;
 }
@@ -79,7 +81,7 @@ export class FragmentStorage implements Storage {
   private header: FileHeader | null = null;
   private versions: string[] = [];
   private encryptionEnabled = false;
-  private index: Map<string, IndexEntryRecord> = new Map();
+  private index: Map<FragmentId, IndexEntryRecord> = new Map();
   private indexEntriesBySlot: (IndexEntryRecord | null)[] = [];
 
   constructor(storageFilePath: string, encryptionKey?: string) {
@@ -125,11 +127,10 @@ export class FragmentStorage implements Storage {
     }
   }
 
-  async ensureFragment(fragmentId: string, currentContent: string = ''): Promise<void> {
+  async ensureFragment(fragmentId: FragmentId, currentContent: string = ''): Promise<void> {
     await this.ensureOpen();
-    const idBuffer = this.normalizeFragmentId(fragmentId);
-    const idKey = idBuffer.toString('hex');
-    if (this.index.has(idKey)) {
+
+    if (this.index.has(fragmentId)) {
       return;
     }
 
@@ -138,34 +139,29 @@ export class FragmentStorage implements Storage {
     const contents = new Array(this.versions.length).fill('');
     const activeIndex = this.header!.activeVersion;
     contents[activeIndex] = currentContent;
+    const idBuffer = Buffer.from(fragmentId, 'hex');
     await this.writeFragmentData(idBuffer, contents);
   }
 
-  async updateFragment(fragmentId: string, version: string, content: string): Promise<void> {
+  async updateFragment(fragmentId: FragmentId, version: string, content: string): Promise<void> {
     await this.ensureOpen();
     const versionIndex = this.getVersionIndex(version);
-    const idBuffer = this.normalizeFragmentId(fragmentId);
-    const idKey = idBuffer.toString('hex');
 
-    if (!this.index.has(idKey)) {
-      await this.ensureFragment(fragmentId);
-    }
-
-    const entry = this.index.get(idKey);
+    const entry = this.index.get(fragmentId);
     if (!entry || !entry.used) {
-      throw new Error(`Failed to locate index entry for fragment '${fragmentId}'.`);
+      throw new Error(`Fragment '${fragmentId}' does not exist.`);
     }
 
     const contents = await this.readFragmentVersions(entry);
     contents[versionIndex] = content;
-    await this.writeFragmentData(idBuffer, contents);
+    await this.writeFragmentData(entry.idBuffer, contents);
   }
 
-  async getFragmentContent(fragmentId: string, version: string): Promise<string | null> {
+  async getFragmentContent(fragmentId: FragmentId, version: string): Promise<string | null> {
     await this.ensureOpen();
     const versionIndex = this.getVersionIndex(version);
-    const idKey = this.normalizeFragmentId(fragmentId).toString('hex');
-    const entry = this.index.get(idKey);
+
+    const entry = this.index.get(fragmentId);
     if (!entry || !entry.used) {
       return null;
     }
@@ -315,12 +311,13 @@ export class FragmentStorage implements Storage {
         this.indexEntriesBySlot[slot] = null;
         continue;
       }
-      const fragmentId = decoded.idBuffer.toString('hex');
+      const fragmentId = decoded.idBuffer.toString('hex') as FragmentId;
       const record: IndexEntryRecord = {
         slot,
         fragmentId,
         idBuffer: decoded.idBuffer,
         offset: decoded.offset,
+        length: decoded.length,
         used: decoded.used,
         encrypted: decoded.encrypted
       };
@@ -333,9 +330,8 @@ export class FragmentStorage implements Storage {
     const handle = await this.getFileHandle();
 
     const aligned = this.alignContents(versionContents);
-    const serialized = Buffer.from(JSON.stringify(aligned), 'utf8');
-    const compressed = zlib.gzipSync(serialized);
-    const payload = this.encryptionEnabled ? this.encryptBuffer(compressed) : compressed;
+    const encoded = this.encodeFragmentContents(aligned);
+    const payload = this.encryptionEnabled ? this.encryptBuffer(encoded) : encoded;
 
     const chunkBuffer = Buffer.allocUnsafe(4 + payload.length);
     chunkBuffer.writeUInt32BE(payload.length, 0);
@@ -345,9 +341,10 @@ export class FragmentStorage implements Storage {
     await handle.write(chunkBuffer, 0, chunkBuffer.length, writeOffset);
     this.header!.dataEnd = writeOffset + chunkBuffer.length;
 
-    const entry = await this.upsertIndexEntry(idBuffer, writeOffset, this.encryptionEnabled);
+    const fragmentId = idBuffer.toString('hex') as FragmentId;
+    const entry = await this.upsertIndexEntry(idBuffer, writeOffset, chunkBuffer.length, this.encryptionEnabled);
     this.indexEntriesBySlot[entry.slot] = entry;
-    this.index.set(entry.fragmentId, entry);
+    this.index.set(fragmentId, entry);
 
     await this.persistHeader();
     await handle.sync();
@@ -363,25 +360,26 @@ export class FragmentStorage implements Storage {
 
   private async readFragmentVersions(entry: IndexEntryRecord): Promise<string[]> {
     const handle = await this.getFileHandle();
-    const lengthBuffer = Buffer.alloc(4);
-    await handle.read(lengthBuffer, 0, 4, entry.offset);
-    const payloadLength = lengthBuffer.readUInt32BE(0);
+    const chunkLength = entry.length;
+    if (chunkLength <= 4) {
+      throw new Error('Corrupted fragment payload: invalid chunk length.');
+    }
+
+    const chunkBuffer = Buffer.alloc(chunkLength);
+    await handle.read(chunkBuffer, 0, chunkLength, entry.offset);
+
+    const payloadLength = chunkBuffer.readUInt32BE(0);
     if (payloadLength === 0) {
       return new Array(this.versions.length).fill('');
     }
-
-    const payload = Buffer.alloc(payloadLength);
-    await handle.read(payload, 0, payloadLength, entry.offset + 4);
-
-    const compressedPayload = entry.encrypted ? this.decryptBuffer(payload) : payload;
-
-    const decompressed = zlib.gunzipSync(compressedPayload);
-    const parsed = JSON.parse(decompressed.toString('utf8'));
-    if (!Array.isArray(parsed)) {
-      throw new Error('Corrupted fragment payload: expected array.');
+    if (payloadLength + 4 !== chunkLength) {
+      throw new Error('Corrupted fragment payload: mismatched length.');
     }
 
-    return this.alignContents(parsed);
+    const payload = chunkBuffer.subarray(4);
+    const dataBuffer = entry.encrypted ? this.decryptBuffer(payload) : payload;
+
+    return this.decodeFragmentContents(dataBuffer);
   }
 
   private async persistHeader(): Promise<void> {
@@ -428,10 +426,15 @@ export class FragmentStorage implements Storage {
     return buffer;
   }
 
-  private async upsertIndexEntry(idBuffer: Buffer, offset: number, encrypted: boolean): Promise<IndexEntryRecord> {
+  private async upsertIndexEntry(
+    idBuffer: Buffer,
+    offset: number,
+    length: number,
+    encrypted: boolean
+  ): Promise<IndexEntryRecord> {
     const handle = await this.getFileHandle();
-    const idKey = idBuffer.toString('hex');
-    let record = this.index.get(idKey);
+    const fragmentId = idBuffer.toString('hex') as FragmentId;
+    let record = this.index.get(fragmentId);
 
     if (!record) {
       const capacity = this.getIndexCapacity();
@@ -439,39 +442,55 @@ export class FragmentStorage implements Storage {
         throw new Error('Index capacity exhausted while inserting new fragment.');
       }
       const slot = this.header!.indexUsed;
-      const entryBuffer = this.buildIndexEntryBuffer(idBuffer, offset, encrypted, true);
+      const entryBuffer = this.buildIndexEntryBuffer(idBuffer, offset, length, encrypted, true);
       const position = this.header!.indexOffset + slot * INDEX_ENTRY_SIZE;
       await handle.write(entryBuffer, 0, entryBuffer.length, position);
 
       record = {
         slot,
-        fragmentId: idKey,
+        fragmentId,
         idBuffer: Buffer.from(idBuffer),
         offset,
+        length,
         used: true,
         encrypted
       };
       this.header!.indexUsed = slot + 1;
       this.indexEntriesBySlot[slot] = record;
-      this.index.set(idKey, record);
+      this.index.set(fragmentId, record);
     } else {
       record.offset = offset;
+      record.length = length;
       record.encrypted = encrypted;
       record.used = true;
-      const entryBuffer = this.buildIndexEntryBuffer(record.idBuffer, record.offset, record.encrypted, record.used);
+      const entryBuffer = this.buildIndexEntryBuffer(
+        record.idBuffer,
+        record.offset,
+        record.length,
+        record.encrypted,
+        record.used
+      );
       const position = this.header!.indexOffset + record.slot * INDEX_ENTRY_SIZE;
       await handle.write(entryBuffer, 0, entryBuffer.length, position);
+      this.index.set(fragmentId, record);
     }
 
     return record;
   }
 
-  private buildIndexEntryBuffer(idBuffer: Buffer, offset: number, encrypted: boolean, used: boolean): Buffer {
+  private buildIndexEntryBuffer(
+    idBuffer: Buffer,
+    offset: number,
+    length: number,
+    encrypted: boolean,
+    used: boolean
+  ): Buffer {
     const buffer = Buffer.alloc(INDEX_ENTRY_SIZE, 0);
-    idBuffer.copy(buffer, 0, 0, Math.min(idBuffer.length, FRAGMENT_ID_SIZE));
+    idBuffer.copy(buffer, 0, 0, FRAGMENT_ID_SIZE);
     const flags = (used ? 0x01 : 0) | (encrypted ? 0x02 : 0);
     buffer.writeUInt8(flags, FRAGMENT_ID_SIZE);
-    buffer.writeBigUInt64BE(BigInt(offset), FRAGMENT_ID_SIZE + 1);
+    buffer.writeUInt32BE(offset >>> 0, FRAGMENT_ID_SIZE + 1);
+    buffer.writeUInt16BE(length & 0xffff, FRAGMENT_ID_SIZE + 5);
     return buffer;
   }
 
@@ -479,26 +498,15 @@ export class FragmentStorage implements Storage {
     const idBuffer = Buffer.alloc(FRAGMENT_ID_SIZE);
     buffer.copy(idBuffer, 0, 0, FRAGMENT_ID_SIZE);
     const flags = buffer.readUInt8(FRAGMENT_ID_SIZE);
-    const offset = Number(buffer.readBigUInt64BE(FRAGMENT_ID_SIZE + 1));
+    const offset = buffer.readUInt32BE(FRAGMENT_ID_SIZE + 1);
+    const length = buffer.readUInt16BE(FRAGMENT_ID_SIZE + 5);
     return {
       idBuffer,
       used: (flags & 0x01) !== 0,
       encrypted: (flags & 0x02) !== 0,
-      offset
+      offset,
+      length
     };
-  }
-
-  private normalizeFragmentId(fragmentId: string): Buffer {
-    const idBuffer = Buffer.from(fragmentId, 'utf8');
-    if (idBuffer.length === FRAGMENT_ID_SIZE) {
-      return idBuffer;
-    }
-    if (idBuffer.length > FRAGMENT_ID_SIZE) {
-      return idBuffer.subarray(0, FRAGMENT_ID_SIZE);
-    }
-    const padded = Buffer.alloc(FRAGMENT_ID_SIZE, 0);
-    idBuffer.copy(padded, 0, 0, idBuffer.length);
-    return padded;
   }
 
   private getVersionIndex(version: string): number {
@@ -581,7 +589,13 @@ export class FragmentStorage implements Storage {
         continue;
       }
       record.offset += growth;
-      const entryBuffer = this.buildIndexEntryBuffer(record.idBuffer, record.offset, record.encrypted, record.used);
+      const entryBuffer = this.buildIndexEntryBuffer(
+        record.idBuffer,
+        record.offset,
+        record.length,
+        record.encrypted,
+        record.used
+      );
       entryBuffer.copy(indexBuffer, slot * INDEX_ENTRY_SIZE);
     }
 
@@ -591,6 +605,88 @@ export class FragmentStorage implements Storage {
 
     await this.persistHeader();
     await handle.sync();
+  }
+
+  private encodeFragmentContents(contents: string[]): Buffer {
+    const entries: { versionIndex: number; data: Buffer }[] = [];
+    let totalDataLength = 0;
+
+    for (let i = 0; i < contents.length; i++) {
+      const value = contents[i] ?? '';
+      if (value.length === 0) {
+        continue;
+      }
+      const data = Buffer.from(value, 'utf8');
+      entries.push({ versionIndex: i, data });
+      totalDataLength += data.length;
+    }
+
+    const entryCount = entries.length;
+    const metadataSize = entryCount * (1 + 4);
+    const bufferLength = 2 + metadataSize + totalDataLength;
+    const buffer = Buffer.allocUnsafe(bufferLength > 0 ? bufferLength : 2);
+    buffer.writeUInt16BE(entryCount, 0);
+
+    let metaOffset = 2;
+    let dataOffset = 2 + metadataSize;
+    for (const entry of entries) {
+      buffer.writeUInt8(entry.versionIndex, metaOffset);
+      metaOffset += 1;
+      buffer.writeUInt32BE(entry.data.length, metaOffset);
+      metaOffset += 4;
+      entry.data.copy(buffer, dataOffset);
+      dataOffset += entry.data.length;
+    }
+
+    if (entryCount === 0) {
+      return buffer.subarray(0, 2);
+    }
+
+    return buffer;
+  }
+
+  private decodeFragmentContents(buffer: Buffer): string[] {
+    if (buffer.length === 0) {
+      return new Array(this.versions.length).fill('');
+    }
+
+    if (buffer.length < 2) {
+      throw new Error('Corrupted fragment payload: missing entry count.');
+    }
+
+    const entryCount = buffer.readUInt16BE(0);
+    const metadataSize = entryCount * (1 + 4);
+    const metadataEnd = 2 + metadataSize;
+    if (buffer.length < metadataEnd) {
+      throw new Error('Corrupted fragment payload: truncated metadata.');
+    }
+
+    const contents = new Array(this.versions.length).fill('');
+    let metaOffset = 2;
+    let dataOffset = metadataEnd;
+
+    for (let i = 0; i < entryCount; i++) {
+      const versionIndex = buffer.readUInt8(metaOffset);
+      metaOffset += 1;
+      const length = buffer.readUInt32BE(metaOffset);
+      metaOffset += 4;
+
+      const end = dataOffset + length;
+      if (end > buffer.length) {
+        throw new Error('Corrupted fragment payload: data exceeds buffer bounds.');
+      }
+
+      if (versionIndex < contents.length && length > 0) {
+        const slice = buffer.subarray(dataOffset, end);
+        contents[versionIndex] = slice.toString('utf8');
+      } else if (versionIndex < contents.length) {
+        contents[versionIndex] = '';
+      }
+
+      dataOffset = end;
+    }
+
+    return contents;
   }
 
   private encryptBuffer(plaintext: Buffer): Buffer {
