@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'path';
-import { FragmentStorage, IFragmentStorage } from './storage';
+import { FragmentStorage, Storage } from './storage';
 import { DocumentManager } from './documentManager';
 import { FragmentService } from './fragmentService';
 import { WorkspaceFragmentLocator } from './fragmentFileLocator';
@@ -22,16 +22,17 @@ import {
   MarkerPositionsParams,
   PullFragmentsParams,
   PushFragmentsParams
-} from 'fragments-protocol';
+} from 'fgmpack-protocol';
 
 export class FragmentsServer {
   private readonly documents = new DocumentManager();
-  private readonly storage: IFragmentStorage;
+  private readonly storage: Storage;
   private readonly service: FragmentService;
   private readonly handlers: FragmentHandlers;
 
   constructor(storageFile: string) {
-    this.storage = new FragmentStorage(storageFile);
+    const encryptionKey = process.env.FRAGMENTS_ENCRYPTION_KEY;
+    this.storage = new FragmentStorage(storageFile, encryptionKey);
     const workspaceRoot = process.cwd();
     const fileLocator = new WorkspaceFragmentLocator(workspaceRoot);
     const revisionState = new MemoryRevisionState();

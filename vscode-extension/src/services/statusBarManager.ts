@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import { FragmentsLanguageClient } from '../client';
-import { FragmentVersionInfo } from 'fragments-protocol';
+import { Client } from '../client';
+import { FragmentVersionInfo } from 'fgmpack-protocol';
 
 export class FragmentStatusBarManager implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
 
-  constructor(private readonly client: FragmentsLanguageClient) {
+  constructor(private readonly client: Client) {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    this.item.command = 'fragments.switchVersion';
+    this.item.command = 'fgmpack.switchVersion';
   }
 
   async initialize(): Promise<void> {
@@ -20,10 +20,10 @@ export class FragmentStatusBarManager implements vscode.Disposable {
       const versionData: FragmentVersionInfo = await this.client.getVersion();
       if (versionData && versionData.activeVersion) {
         this.item.text = `$(versions) ${versionData.activeVersion}`;
-        this.item.tooltip = `Fragments version: ${versionData.activeVersion}. Click to switch versions.`;
+        this.item.tooltip = `fgmpack: ${versionData.activeVersion}. Click to switch versions.`;
       } else {
         this.item.text = `$(versions) fragments`;
-        this.item.tooltip = 'Fragments not initialized. Click to initialize.';
+        this.item.tooltip = 'Fragments not initialized.';
       }
     } catch (error) {
       this.item.text = `$(error) fragments`;

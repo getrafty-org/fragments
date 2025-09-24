@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { FragmentsLanguageClient } from '../client';
-import { FragmentMarkerRange } from 'fragments-protocol';
+import { Client } from '../client';
+import { FragmentMarkerRange } from 'fgmpack-protocol';
 import { isProcessableDocument } from '../utils/documentFilters';
 
 export class FragmentHoverHighlighter implements vscode.Disposable {
@@ -15,7 +15,7 @@ export class FragmentHoverHighlighter implements vscode.Disposable {
   private currentHover: { editor: vscode.TextEditor; line: number } | null = null;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly client: FragmentsLanguageClient) {
+  constructor(private readonly client: Client) {
     this.disposables.push(this.decorationType);
   }
 
@@ -64,7 +64,7 @@ export class FragmentHoverHighlighter implements vscode.Disposable {
         this.currentHover = null;
       }
     } catch (error) {
-      // Ignore hover errors silently.
+      console.error(error);
     }
   };
 

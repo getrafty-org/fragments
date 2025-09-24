@@ -1,3 +1,20 @@
+// Fragment ID type - 4-character hex string (2 bytes)
+type HexChar = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f';
+export type FragmentId = `${HexChar}${HexChar}${HexChar}${HexChar}`;
+
+// Type guard function (runtime validation)
+export function isValidFragmentId(value: string): value is FragmentId {
+  return /^[0-9a-f]{4}$/.test(value);
+}
+
+// Helper function to create FragmentId with validation
+export function createFragmentId(value: string): FragmentId {
+  if (!isValidFragmentId(value)) {
+    throw new Error(`Invalid fragment ID: ${value}. Must be 4-character hex string.`);
+  }
+  return value;
+}
+
 export type FragmentMethod =
   | 'frag.event.didOpenDocument'
   | 'frag.event.didChangeDocument'
@@ -72,8 +89,8 @@ export interface PushFragmentsParams {
 
 export interface FragmentIssue {
   type: 'nested-fragment';
-  fragmentId: string;
-  parentFragmentId: string;
+  fragmentId: FragmentId;
+  parentFragmentId: FragmentId;
   startLine: number;
   endLine: number;
   message: string;
@@ -120,7 +137,7 @@ export interface InsertMarkerParams {
 
 export interface InsertMarkerResult {
   success: true;
-  fragmentId: string;
+  fragmentId: FragmentId;
   markerText: string;
   insertPosition: 'line-end' | 'new-line';
 }
@@ -138,7 +155,7 @@ export interface FragmentMarkerRange {
   endCharacter: number;
   isStartMarker: boolean;
   isEndMarker: boolean;
-  fragmentId: string;
+  fragmentId: FragmentId;
 }
 
 export interface MarkerPositionsParams {
@@ -154,7 +171,7 @@ export interface FragmentMarkerRangesResult {
 export interface FragmentAllRangesResult {
   success: true;
   fragments: Array<{
-    id: string;
+    id: FragmentId;
     startLine: number;
     endLine: number;
   }>;

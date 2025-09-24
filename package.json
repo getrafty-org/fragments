@@ -1,16 +1,87 @@
 {
-  "name": "fragments-root",
+  "name": "fgmpack",
+  "displayName": "Fragment Pack",
+  "description": "Manage versioned code fragment packs",
   "version": "0.1.0",
-  "private": true,
-  "description": "Fragments tooling aggregate",
+  "publisher": "getrafty",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getrafty/fragments.git"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fgmpack.getVersion",
+        "title": "Get Active Version",
+        "category": "Fragment Pack"
+      },
+      {
+        "command": "fgmpack.insertMarker",
+        "title": "Insert Fragment Marker",
+        "category": "Fragment Pack"
+      },
+      {
+        "command": "fgmpack.listVersions",
+        "title": "List Versions",
+        "category": "Fragment Pack"
+      },
+      {
+        "command": "fgmpack.switchVersion",
+        "title": "Switch Version",
+        "category": "Fragment Pack"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "fgmpack.insertMarker",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "fgmpack.insertMarker",
+          "group": "fgmpack",
+          "when": "editorTextFocus"
+        }
+      ]
+    }
+  },
   "scripts": {
     "bootstrap": "npm install --prefix protocol && npm install --prefix language-server && npm install --prefix vscode-extension",
-    "build": "npm run build:protocol && npm run build:language-server && npm run build:extension",
+    "build": "npm run build:deps && webpack --mode development",
+    "build:deps": "npm run build:protocol && npm run build:language-server",
     "build:protocol": "npm run build --prefix protocol",
     "build:language-server": "npm run build --prefix language-server",
-    "build:extension": "npm run build --prefix vscode-extension"
+    "build:language-server:binary": "npm run build:binary --prefix language-server",
+    "compile": "npm run build",
+    "watch": "npm run build:deps && webpack --mode development --watch",
+    "vscode:prepublish": "npm run package",
+    "package": "npm run build:deps && webpack --mode production --devtool hidden-source-map",
+    "vsce:package": "npx vsce package --out dist/",
+    "install-extension": "npm run vsce:package && code --install-extension dist/*.vsix",
+    "install-server": "npm run build:language-server:binary && scripts/install-server.sh",
+    "uninstall-server": "scripts/install-server.sh --uninstall"
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.6.1",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.6.0",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
   }
 }

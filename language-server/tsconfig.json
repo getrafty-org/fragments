@@ -6,7 +6,7 @@
     "declarationMap": true,
     "baseUrl": "./",
     "paths": {
-      "fragments-protocol": ["../protocol/src/index"]
+      "fgmpack-protocol": ["../protocol/src/index"]
     }
   },
   "include": ["src/**/*"],

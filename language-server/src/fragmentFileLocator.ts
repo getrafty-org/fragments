@@ -79,7 +79,7 @@ export class WorkspaceFragmentLocator implements FragmentFileLocator {
   }
 
   private loadIgnorePatterns(root: string): string[] {
-    const ignoreFile = path.join(root, '.fragments-ignore');
+    const ignoreFile = path.join(root, '.fragmentsignore');
     if (!this.fsModule.existsSync(ignoreFile)) {
       return [];
     }

@@ -16,20 +16,20 @@ import {
   InsertMarkerResult,
   PullFragmentsResult,
   PushFragmentsResult
-} from 'fragments-protocol';
+} from 'fgmpack-protocol';
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 }
 
-export class FragmentsLanguageClient {
+export class Client {
   private serverProcess: ChildProcess | null = null;
   private requestId = 0;
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private readonly operationQueue = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly extensionRoot: string) {}
+  constructor() {}
 
   async start(): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -37,11 +37,12 @@ export class FragmentsLanguageClient {
       throw new Error('No workspace folder found');
     }
 
-    const serverPath = this.resolveServerPath(workspaceFolder.uri.fsPath);
-    this.serverProcess = spawn('node', [serverPath], {
+    const serverPath = await this.resolveServerPath();
+    this.serverProcess = spawn(serverPath, ['--root', workspaceFolder.uri.fsPath], {
       stdio: ['pipe', 'pipe', 'inherit'],
       cwd: workspaceFolder.uri.fsPath
     });
+    console.info("fgmpackd started")
 
     this.serverProcess.stdout?.on('data', (data: Buffer) => {
       const lines = data.toString().split('\n').filter((line: string) => line.trim());
@@ -163,28 +164,39 @@ export class FragmentsLanguageClient {
     void this.stop();
   }
 
-  private resolveServerPath(workspaceRoot: string): string {
-    const candidateRoots = [
-      path.join(workspaceRoot, 'language-server'),
-      path.join(this.extensionRoot, '..', 'language-server'),
-      path.join(this.extensionRoot, 'language-server')
-    ];
-
-    const candidatePaths: string[] = [];
-    for (const root of candidateRoots) {
-      candidatePaths.push(
-        path.join(root, 'dist', 'server.js'),
-        path.join(root, 'dist', 'src', 'server.js')
-      );
+  private async resolveServerPath(): Promise<string> {
+    const systemServer = await this.findSystemServer();
+    if (systemServer) {
+      return systemServer;
     }
 
-    for (const candidate of candidatePaths) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
+    throw new Error("fgmpackd not found");
+  }
 
-    throw new Error('Unable to locate fragments language server bundle. Build the project or adjust configuration.');
+  private async findSystemServer(): Promise<string | null> {
+    return new Promise((resolve) => {
+      process.arch
+      const which = process.platform === 'win32' ? 'where' : 'which';
+      const ext = process.platform === 'win32' ? '.exe' : '';
+      const serverName = `fgmpackd-${process.platform}-${process.arch}${ext}`
+
+      const child = spawn(which, [serverName], { stdio: 'pipe' });
+      let output = '';
+
+      child.stdout?.on('data', (data) => {
+        output += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && output.trim()) {
+          resolve(output.trim().split('\n')[0]);
+        } else {
+          resolve(null);
+        }
+      });
+
+      child.on('error', () => resolve(null));
+    });
   }
 
   private async applyDocumentChanges(changes: FragmentDocumentChange[]): Promise<void> {

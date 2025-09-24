@@ -1,31 +1,40 @@
 {
-  "name": "fragments-language-server",
+  "name": "fgmpack-language-server",
   "version": "0.1.0",
-  "description": "Language server for managing versioned code fragments",
+  "description": "Language server for fgmpack",
   "main": "dist/server.js",
   "bin": {
-    "fragments-language-server": "dist/server.js"
+    "fgmpack-language-server": "dist/server.js"
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "webpack",
+    "build:dev": "webpack --mode development",
+    "build:binary": "npm run build && pkg dist/server.js --targets node18-linux-x64 --output dist/bin/fgmpackd-linux-x64 && pkg dist/server.js --targets node18-macos-x64 --output dist/bin/fgmpackd-macos-x64 && pkg dist/server.js --targets node18-win-x64 --output dist/bin/fgmpackd-win-x64.exe",
     "dev": "tsc --build --watch",
     "start": "node dist/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
-  "keywords": ["fragments", "code", "versioning", "language-server"],
+  "keywords": [
+    "fgmpack",
+    "language-server"
+  ],
   "author": "getrafty.org",
   "license": "MIT",
   "dependencies": {
-    "fragments-protocol": "file:../protocol",
+    "fgmpack-protocol": "file:../protocol",
     "ignore": "^5.3.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.14.0",
     "jest": "^29.7.0",
+    "pkg": "^5.8.1",
     "ts-jest": "^29.2.5",
-    "typescript": "^5.6.0"
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.6.0",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
   }
 }

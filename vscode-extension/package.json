@@ -1,12 +1,15 @@
 {
-  "name": "fragments",
-  "displayName": "Fragments",
+  "name": "fgmpack",
+  "displayName": "Fragment Pack",
   "description": "Manage versioned code fragments",
   "version": "0.1.0",
+  "publisher": "getrafty",
   "engines": {
     "vscode": "^1.74.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -14,29 +17,29 @@
   "contributes": {
     "commands": [
       {
-        "command": "fragments.getVersion",
-        "title": "Get Active Version",
-        "category": "Fragments"
+        "command": "fgmpack.getVersion",
+        "title": "View Version",
+        "category": "fgmpack"
       },
       {
-        "command": "fragments.insertMarker",
-        "title": "Insert Fragment Marker",
-        "category": "Fragments"
+        "command": "fgmpack.insertMarker",
+        "title": "Insert",
+        "category": "fgmpack"
       },
       {
-        "command": "fragments.listVersions",
+        "command": "fgmpack.listVersions",
         "title": "List Versions",
-        "category": "Fragments"
+        "category": "fgmpack"
       },
       {
-        "command": "fragments.switchVersion",
-        "title": "Switch Version",
-        "category": "Fragments"
+        "command": "fgmpack.switchVersion",
+        "title": "Set Version",
+        "category": "fgmpack"
       }
     ],
     "keybindings": [
       {
-        "command": "fragments.insertMarker",
+        "command": "fgmpack.insertMarker",
         "key": "ctrl+shift+f",
         "mac": "cmd+shift+f",
         "when": "editorTextFocus"
@@ -45,23 +48,12 @@
     "menus": {
       "editor/context": [
         {
-          "command": "fragments.insertMarker",
-          "group": "fragments",
+          "command": "fgmpack.insertMarker",
+          "group": "fgmpack",
           "when": "editorTextFocus"
         }
       ]
     }
   },
-  "scripts": {
-    "build": "tsc --build",
-    "dev": "tsc --build --watch"
-  },
-  "devDependencies": {
-    "@types/node": "^20.14.0",
-    "@types/vscode": "^1.74.0",
-    "typescript": "^5.6.0"
-  },
-  "dependencies": {
-    "fragments-protocol": "file:../protocol"
-  }
+  "private": true
 }

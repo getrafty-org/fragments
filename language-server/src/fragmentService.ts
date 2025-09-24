@@ -1,11 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
+import { randomBytes } from 'crypto';
 import { DocumentManager } from './documentManager';
 import { FragmentFileLocator } from './fragmentFileLocator';
 import { FragmentUtils, FRAGMENT_END_TOKEN, FRAGMENT_START_REGEX } from './fragmentUtils';
 import { RevisionState } from './revisionState';
-import { IFragmentStorage } from './storage';
+import { Storage } from './storage';
+import { FragmentId, isValidFragmentId } from 'fgmpack-protocol';
 import {
   AllRangesParams,
   ChangeVersionParams,
@@ -25,7 +27,7 @@ import {
   PullFragmentsResult,
   PushFragmentsParams,
   PushFragmentsResult
-} from 'fragments-protocol';
+} from 'fgmpack-protocol';
 
 interface ContentResolution {
   type: 'document' | 'file';
@@ -37,25 +39,48 @@ interface ContentResolution {
 export class FragmentService {
   constructor(
     private readonly documents: DocumentManager,
-    private readonly storage: IFragmentStorage,
+    private readonly storage: Storage,
     private readonly fileLocator: FragmentFileLocator,
     private readonly revisionState: RevisionState
   ) {}
 
+  private async generateUniqueFragmentId(): Promise<FragmentId> {
+    const maxAttempts = 100;
+
+    for (let attempts = 0; attempts < maxAttempts; attempts++) {
+      const id = randomBytes(2).toString('hex') as FragmentId;
+      const existing = await this.storage.getFragmentContent(id, await this.storage.getActiveVersion());
+
+      if (existing === null) {
+        return id;
+      }
+    }
+
+    throw new Error(`Failed to generate unique fragment ID after ${maxAttempts} attempts`);
+  }
+
   async pullFragments(params: PullFragmentsParams): Promise<PullFragmentsResult> {
     const resolution = await this.resolveContent(params);
-    const data = await this.storage.load();
+    const activeVersion = await this.storage.getActiveVersion(); // Avoid full load()
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
 
     for (const fragment of fragments) {
-      await this.storage.ensureFragment(fragment.id, fragment.currentContent);
+      if (!isValidFragmentId(fragment.id)) {
+        continue; // Skip invalid fragment IDs
+      }
+      const fragmentId = fragment.id as FragmentId;
+      await this.storage.ensureFragment(fragmentId, fragment.currentContent);
     }
 
     let updatedContent = resolution.content;
     let appliedCount = 0;
 
     for (const fragment of fragments) {
-      const fragmentData = await this.storage.getFragmentContent(fragment.id, data.activeVersion);
+      if (!isValidFragmentId(fragment.id)) {
+        continue; // Skip invalid fragment IDs
+      }
+      const fragmentId = fragment.id as FragmentId;
+      const fragmentData = await this.storage.getFragmentContent(fragmentId, activeVersion);
       if (fragmentData !== null && fragmentData !== fragment.currentContent) {
         updatedContent = FragmentUtils.replaceFragmentContent(updatedContent, fragment.id, fragmentData);
         appliedCount++;
@@ -76,7 +101,7 @@ export class FragmentService {
 
   async pushFragments(params: PushFragmentsParams): Promise<PushFragmentsResult> {
     const resolution = await this.resolveContent(params);
-    const data = await this.storage.load();
+    const activeVersion = await this.storage.getActiveVersion(); // Avoid full load()
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
     const nestedFragments = FragmentUtils.findNestedFragments(resolution.content);
 
@@ -93,18 +118,26 @@ export class FragmentService {
       return {
         success: false,
         fragmentsSaved: 0,
-        activeVersion: data.activeVersion,
+        activeVersion,
         issues
       };
     }
 
     for (const fragment of fragments) {
-      await this.storage.ensureFragment(fragment.id, fragment.currentContent);
+      if (!isValidFragmentId(fragment.id)) {
+        continue; // Skip invalid fragment IDs
+      }
+      const fragmentId = fragment.id as FragmentId;
+      await this.storage.ensureFragment(fragmentId, fragment.currentContent);
     }
 
     let savedCount = 0;
     for (const fragment of fragments) {
-      await this.storage.updateFragment(fragment.id, data.activeVersion, fragment.currentContent);
+      if (!isValidFragmentId(fragment.id)) {
+        continue; // Skip invalid fragment IDs
+      }
+      const fragmentId = fragment.id as FragmentId;
+      await this.storage.updateFragment(fragmentId, activeVersion, fragment.currentContent);
       savedCount++;
     }
 
@@ -114,7 +147,7 @@ export class FragmentService {
 
     return {
       success: true,
-      activeVersion: data.activeVersion,
+      activeVersion,
       fragmentsSaved: savedCount
     };
   }
@@ -178,7 +211,9 @@ export class FragmentService {
   }
 
   async insertMarker(params: InsertMarkerParams): Promise<InsertMarkerResult> {
-    const markerResult = FragmentUtils.generateMarkerInsertion({
+    const fragmentId = await this.generateUniqueFragmentId();
+    const markerResult = FragmentUtils.generateMarkerInsertionWithId({
+      fragmentId,
       languageId: params.languageId,
       lineContent: params.lineContent || '',
       indentation: params.indentation || ''
@@ -193,19 +228,19 @@ export class FragmentService {
   }
 
   async getVersion(): Promise<FragmentVersionInfo> {
-    const data = await this.storage.load();
-    if (data) {
+    if (!this.storage.isOpen()) {
       return {
-        activeVersion: data.activeVersion,
-        availableVersions: data.availableVersions,
-        initialized: true
+        activeVersion: 'public',
+        availableVersions: ['public', 'private'],
+        initialized: false
       };
     }
 
+    await this.storage.open();
     return {
-      activeVersion: 'public',
-      availableVersions: ['public', 'private'],
-      initialized: false
+      activeVersion: await this.storage.getActiveVersion(),
+      availableVersions: await this.storage.getAvailableVersions(),
+      initialized: true
     };
   }
 
@@ -222,7 +257,7 @@ export class FragmentService {
     const endMatch = lineContent.includes(FRAGMENT_END_TOKEN);
 
     if (startMatch) {
-      const fragmentId = startMatch[2];
+      const fragmentId = startMatch[2] as FragmentId;
       const endLine = this.findMatchingEndLine(lines, params.line + 1);
       if (endLine !== -1) {
         const startLineContent = lines[params.line];
@@ -236,14 +271,15 @@ export class FragmentService {
         };
       }
     } else if (endMatch) {
-      const { startLine, fragmentId } = this.findMatchingStartLine(lines, params.line - 1) || {};
-      if (typeof startLine === 'number' && fragmentId) {
-        const startLineContent = lines[startLine];
+      const result = this.findMatchingStartLine(lines, params.line - 1);
+      if (result && typeof result.startLine === 'number' && result.fragmentId) {
+        const fragmentId = result.fragmentId as FragmentId;
+        const startLineContent = lines[result.startLine];
         const endLineContent = lines[params.line];
         return {
           success: true,
           markerRanges: [
-            ...buildMarkerSymbolRanges(startLine, startLineContent, fragmentId, true, false),
+            ...buildMarkerSymbolRanges(result.startLine, startLineContent, fragmentId, true, false),
             ...buildMarkerSymbolRanges(params.line, endLineContent, fragmentId, false, true)
           ]
         };
@@ -317,7 +353,7 @@ export class FragmentService {
 function buildMarkerSymbolRanges(
   lineIndex: number,
   content: string,
-  fragmentId: string,
+  fragmentId: FragmentId,
   isStartMarker: boolean,
   isEndMarker: boolean
 ): FragmentMarkerRange[] {
