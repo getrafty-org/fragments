@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
-import { FragmentId } from 'fragments-protocol';
+import { FragmentId } from 'fgmpack-protocol';
 
 export interface Storage {
   isOpen(): boolean;
@@ -27,6 +27,10 @@ const INDEX_ENTRY_SIZE = 10;
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const HEADER_FLAG_ENCRYPTED = 0x01;
+const COMPACTION_DENSITY_THRESHOLD = 0.6;
+const COMPACTION_MIN_FRAGMENTS = 8;
+const COMPACTION_MIN_BYTES = 64 * 1024;
+const EMPTY_BUFFER = Buffer.alloc(0);
 
 interface FileHeader {
   version: number;
@@ -83,6 +87,8 @@ export class FragmentStorage implements Storage {
   private encryptionEnabled = false;
   private index: Map<FragmentId, IndexEntryRecord> = new Map();
   private indexEntriesBySlot: (IndexEntryRecord | null)[] = [];
+  private isCompacting = false;
+  private liveDataBytes = 0;
 
   constructor(storageFilePath: string, encryptionKey?: string) {
     this.storageFilePath = storageFilePath;
@@ -136,9 +142,9 @@ export class FragmentStorage implements Storage {
 
     await this.ensureIndexCapacity(1);
 
-    const contents = new Array(this.versions.length).fill('');
+    const contents = new Array<Buffer>(this.versions.length).fill(EMPTY_BUFFER);
     const activeIndex = this.header!.activeVersion;
-    contents[activeIndex] = currentContent;
+    contents[activeIndex] = Buffer.from(currentContent, 'utf8');
     const idBuffer = Buffer.from(fragmentId, 'hex');
     await this.writeFragmentData(idBuffer, contents);
   }
@@ -152,8 +158,8 @@ export class FragmentStorage implements Storage {
       throw new Error(`Fragment '${fragmentId}' does not exist.`);
     }
 
-    const contents = await this.readFragmentVersions(entry);
-    contents[versionIndex] = content;
+    const contents = await this.readFragmentBuffers(entry);
+    contents[versionIndex] = Buffer.from(content, 'utf8');
     await this.writeFragmentData(entry.idBuffer, contents);
   }
 
@@ -166,8 +172,9 @@ export class FragmentStorage implements Storage {
       return null;
     }
 
-    const contents = await this.readFragmentVersions(entry);
-    return contents[versionIndex] ?? '';
+    const contents = await this.readFragmentBuffers(entry);
+    const buffer = contents[versionIndex];
+    return buffer ? buffer.toString('utf8') : '';
   }
 
   async getActiveVersion(): Promise<string> {
@@ -295,6 +302,7 @@ export class FragmentStorage implements Storage {
 
     const capacity = this.getIndexCapacity();
     this.ensureSlotArrayCapacity(capacity);
+    this.liveDataBytes = 0;
 
     if (header.indexUsed === 0) {
       return;
@@ -323,10 +331,15 @@ export class FragmentStorage implements Storage {
       };
       this.indexEntriesBySlot[slot] = record;
       this.index.set(fragmentId, record);
+      this.liveDataBytes += record.length;
     }
   }
 
-  private async writeFragmentData(idBuffer: Buffer, versionContents: string[]): Promise<void> {
+  private async writeFragmentData(
+    idBuffer: Buffer,
+    versionContents: Buffer[],
+    skipCompaction: boolean = false
+  ): Promise<void> {
     const handle = await this.getFileHandle();
 
     const aligned = this.alignContents(versionContents);
@@ -342,23 +355,36 @@ export class FragmentStorage implements Storage {
     this.header!.dataEnd = writeOffset + chunkBuffer.length;
 
     const fragmentId = idBuffer.toString('hex') as FragmentId;
-    const entry = await this.upsertIndexEntry(idBuffer, writeOffset, chunkBuffer.length, this.encryptionEnabled);
+    const previousLength = this.index.get(fragmentId)?.length ?? 0;
+    const entry = await this.upsertIndexEntry(
+      fragmentId,
+      idBuffer,
+      writeOffset,
+      chunkBuffer.length,
+      this.encryptionEnabled
+    );
     this.indexEntriesBySlot[entry.slot] = entry;
     this.index.set(fragmentId, entry);
 
+    this.liveDataBytes += entry.length - previousLength;
+
     await this.persistHeader();
     await handle.sync();
+
+    if (!skipCompaction) {
+      await this.maybeCompactStorage();
+    }
   }
 
-  private alignContents(contents: string[]): string[] {
-    const result = new Array(this.versions.length).fill('');
+  private alignContents(contents: Buffer[]): Buffer[] {
+    const result = new Array<Buffer>(this.versions.length).fill(EMPTY_BUFFER);
     for (let i = 0; i < Math.min(contents.length, this.versions.length); i++) {
-      result[i] = typeof contents[i] === 'string' ? contents[i] : '';
+      result[i] = contents[i] ?? EMPTY_BUFFER;
     }
     return result;
   }
 
-  private async readFragmentVersions(entry: IndexEntryRecord): Promise<string[]> {
+  private async readFragmentBuffers(entry: IndexEntryRecord): Promise<Buffer[]> {
     const handle = await this.getFileHandle();
     const chunkLength = entry.length;
     if (chunkLength <= 4) {
@@ -370,7 +396,7 @@ export class FragmentStorage implements Storage {
 
     const payloadLength = chunkBuffer.readUInt32BE(0);
     if (payloadLength === 0) {
-      return new Array(this.versions.length).fill('');
+      return new Array<Buffer>(this.versions.length).fill(EMPTY_BUFFER);
     }
     if (payloadLength + 4 !== chunkLength) {
       throw new Error('Corrupted fragment payload: mismatched length.');
@@ -380,6 +406,78 @@ export class FragmentStorage implements Storage {
     const dataBuffer = entry.encrypted ? this.decryptBuffer(payload) : payload;
 
     return this.decodeFragmentContents(dataBuffer);
+  }
+
+  private calculateUsedDataBytes(): number {
+    return this.liveDataBytes;
+  }
+
+  private async maybeCompactStorage(): Promise<void> {
+    if (!this.header || this.isCompacting) {
+      return;
+    }
+
+    const totalSpan = this.header.dataEnd - this.header.dataStart;
+    if (totalSpan <= 0 || totalSpan < COMPACTION_MIN_BYTES) {
+      return;
+    }
+    if (this.header.indexUsed < COMPACTION_MIN_FRAGMENTS) {
+      return;
+    }
+
+    const usedBytes = this.calculateUsedDataBytes();
+    if (usedBytes === 0) {
+      return;
+    }
+
+    const density = usedBytes / totalSpan;
+    if (density >= COMPACTION_DENSITY_THRESHOLD) {
+      return;
+    }
+
+    await this.compactStorage();
+  }
+
+  private async compactStorage(): Promise<void> {
+    if (!this.header || this.isCompacting) {
+      return;
+    }
+
+    const activeRecords = this.indexEntriesBySlot.filter(
+      (record): record is IndexEntryRecord => Boolean(record && record.used)
+    );
+    if (activeRecords.length === 0) {
+      return;
+    }
+
+    this.isCompacting = true;
+    try {
+      const fragments: { idBuffer: Buffer; contents: Buffer[] }[] = [];
+      for (const record of activeRecords) {
+        const contents = await this.readFragmentBuffers(record);
+        fragments.push({ idBuffer: Buffer.from(record.idBuffer), contents });
+      }
+
+      const handle = await this.getFileHandle();
+
+      this.index.clear();
+      this.indexEntriesBySlot = new Array(this.getIndexCapacity()).fill(null);
+      this.header.indexUsed = 0;
+      this.header.dataStart = this.header.indexOffset + this.header.indexSize;
+      this.header.dataEnd = this.header.dataStart;
+      this.liveDataBytes = 0;
+
+      await handle.truncate(this.header.dataStart);
+
+      for (const fragment of fragments) {
+        await this.writeFragmentData(fragment.idBuffer, fragment.contents, true);
+      }
+
+      await this.persistHeader();
+      await handle.sync();
+    } finally {
+      this.isCompacting = false;
+    }
   }
 
   private async persistHeader(): Promise<void> {
@@ -427,13 +525,13 @@ export class FragmentStorage implements Storage {
   }
 
   private async upsertIndexEntry(
+    fragmentId: FragmentId,
     idBuffer: Buffer,
     offset: number,
     length: number,
     encrypted: boolean
   ): Promise<IndexEntryRecord> {
     const handle = await this.getFileHandle();
-    const fragmentId = idBuffer.toString('hex') as FragmentId;
     let record = this.index.get(fragmentId);
 
     if (!record) {
@@ -607,18 +705,17 @@ export class FragmentStorage implements Storage {
     await handle.sync();
   }
 
-  private encodeFragmentContents(contents: string[]): Buffer {
+  private encodeFragmentContents(contents: Buffer[]): Buffer {
     const entries: { versionIndex: number; data: Buffer }[] = [];
     let totalDataLength = 0;
 
     for (let i = 0; i < contents.length; i++) {
-      const value = contents[i] ?? '';
-      if (value.length === 0) {
+      const value = contents[i];
+      if (!value || value.length === 0) {
         continue;
       }
-      const data = Buffer.from(value, 'utf8');
-      entries.push({ versionIndex: i, data });
-      totalDataLength += data.length;
+      entries.push({ versionIndex: i, data: value });
+      totalDataLength += value.length;
     }
 
     const entryCount = entries.length;
@@ -645,9 +742,9 @@ export class FragmentStorage implements Storage {
     return buffer;
   }
 
-  private decodeFragmentContents(buffer: Buffer): string[] {
+  private decodeFragmentContents(buffer: Buffer): Buffer[] {
     if (buffer.length === 0) {
-      return new Array(this.versions.length).fill('');
+      return new Array<Buffer>(this.versions.length).fill(EMPTY_BUFFER);
     }
 
     if (buffer.length < 2) {
@@ -661,7 +758,7 @@ export class FragmentStorage implements Storage {
       throw new Error('Corrupted fragment payload: truncated metadata.');
     }
 
-    const contents = new Array(this.versions.length).fill('');
+    const contents = new Array<Buffer>(this.versions.length).fill(EMPTY_BUFFER);
     let metaOffset = 2;
     let dataOffset = metadataEnd;
 
@@ -676,11 +773,8 @@ export class FragmentStorage implements Storage {
         throw new Error('Corrupted fragment payload: data exceeds buffer bounds.');
       }
 
-      if (versionIndex < contents.length && length > 0) {
-        const slice = buffer.subarray(dataOffset, end);
-        contents[versionIndex] = slice.toString('utf8');
-      } else if (versionIndex < contents.length) {
-        contents[versionIndex] = '';
+      if (versionIndex < contents.length) {
+        contents[versionIndex] = length > 0 ? buffer.subarray(dataOffset, end) : EMPTY_BUFFER;
       }
 
       dataOffset = end;

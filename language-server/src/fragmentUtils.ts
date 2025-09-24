@@ -1,3 +1,6 @@
+import { randomBytes } from 'crypto';
+import { FragmentId } from 'fgmpack-protocol';
+
 export const FRAGMENT_START_PREFIX = '==== YOUR CODE: @';
 export const FRAGMENT_END_TOKEN = '==== END YOUR CODE ====';
 export const FRAGMENT_START_REGEX = /(.*)YOUR CODE: @([^\s]+) ====/;
@@ -8,8 +11,15 @@ export interface MarkerInsertionRequest {
   indentation?: string;
 }
 
+export interface MarkerInsertionWithIdRequest {
+  fragmentId: FragmentId;
+  languageId: string;
+  lineContent: string;
+  indentation?: string;
+}
+
 export interface MarkerInsertionResult {
-  fragmentId: string;
+  fragmentId: FragmentId;
   markerText: string;
   insertPosition: 'line-end' | 'new-line';
 }
@@ -55,8 +65,8 @@ export class FragmentUtils {
   /**
    * Generate a unique fragment ID
    */
-  public static generateFragmentId(): string {
-    return Math.random().toString(36).substring(2, 10);
+  public static generateFragmentId(): FragmentId {
+    return randomBytes(2).toString('hex') as FragmentId; // 4 hex chars, compact 2-byte ID
   }
 
   /**
@@ -70,7 +80,7 @@ export class FragmentUtils {
    * Create fragment marker text for given language and indentation
    */
   public static createFragmentMarker(
-    fragmentId: string,
+    fragmentId: FragmentId,
     languageId: string,
     indentation: string = ''
   ): string {
@@ -102,6 +112,20 @@ export class FragmentUtils {
   }
 
   /**
+   * Generate a complete marker insertion response with provided ID
+   */
+  public static generateMarkerInsertionWithId(request: MarkerInsertionWithIdRequest): MarkerInsertionResult {
+    const indentation = request.indentation || '';
+    const markerText = this.createFragmentMarker(request.fragmentId, request.languageId, indentation);
+
+    return {
+      fragmentId: request.fragmentId,
+      markerText,
+      insertPosition: 'line-end'
+    };
+  }
+
+  /**
    * Extract indentation from a line of text
    */
   public static extractIndentation(lineContent: string): string {
@@ -113,7 +137,7 @@ export class FragmentUtils {
    * Parse fragment from content with line numbers using stack-based approach for proper nesting
    */
   public static parseFragmentsWithLines(content: string): Array<{
-    id: string;
+    id: FragmentId;
     startLine: number;
     endLine: number;
     currentContent: string;
@@ -121,7 +145,7 @@ export class FragmentUtils {
   }> {
     const lines = content.split('\n');
     const fragments: Array<{
-      id: string;
+      id: FragmentId;
       startLine: number;
       endLine: number;
       currentContent: string;
@@ -130,7 +154,7 @@ export class FragmentUtils {
 
     // Stack to track nested fragments
     const fragmentStack: Array<{
-      id: string;
+      id: FragmentId;
       startLine: number;
       indentation: string;
       contentLines: string[];
@@ -143,7 +167,7 @@ export class FragmentUtils {
 
       if (startMatch) {
         // Found a start marker - push to stack
-        const fragmentId = startMatch[2];
+        const fragmentId = startMatch[2] as FragmentId;
         const indentation = this.extractIndentation(line);
 
         fragmentStack.push({
@@ -182,21 +206,21 @@ export class FragmentUtils {
    * Detect fragments that are nested inside other fragments
    */
   public static findNestedFragments(content: string): Array<{
-    fragmentId: string;
-    parentFragmentId: string;
+    fragmentId: FragmentId;
+    parentFragmentId: FragmentId;
     startLine: number;
     endLine: number;
   }> {
     const fragments = this.parseFragmentsWithLines(content);
     const nestedFragments: Array<{
-      fragmentId: string;
-      parentFragmentId: string;
+      fragmentId: FragmentId;
+      parentFragmentId: FragmentId;
       startLine: number;
       endLine: number;
     }> = [];
 
     const stack: Array<{
-      id: string;
+      id: FragmentId;
       startLine: number;
       endLine: number;
     }> = [];
@@ -229,7 +253,7 @@ export class FragmentUtils {
    */
   public static replaceFragmentContent(
     fileContent: string,
-    fragmentId: string,
+    fragmentId: FragmentId,
     newContent: string
   ): string {
     const fragments = this.parseFragmentsWithLines(fileContent);

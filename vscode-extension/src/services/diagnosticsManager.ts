@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { FragmentIssue } from 'fragments-protocol';
+import { FragmentIssue } from 'fgmpack-protocol';
 
 export class FragmentDiagnosticsManager implements vscode.Disposable {
-  private readonly collection = vscode.languages.createDiagnosticCollection('fragments');
+  private readonly collection = vscode.languages.createDiagnosticCollection('fgmpack');
 
   setIssues(document: vscode.TextDocument, issues: FragmentIssue[]): void {
     const diagnostics = issues.map(issue => {

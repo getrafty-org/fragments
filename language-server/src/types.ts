@@ -1,5 +1,7 @@
+import { FragmentId } from 'fgmpack-protocol';
+
 export interface FragmentContent {
-  id: string;
+  id: FragmentId;
   versions: Record<string, string>;
   metadata?: {
     created?: Date;

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { FragmentStorage } from '../storage';
-import { FragmentId, isValidFragmentId, createFragmentId } from 'fragments-protocol';
+import { FragmentId, isValidFragmentId, createFragmentId } from 'fgmpack-protocol';
 
 
 type SeedFragment = {

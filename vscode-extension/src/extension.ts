@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { FragmentsLanguageClient } from './client';
+import { Client } from './client';
 import { FragmentDiagnosticsManager } from './services/diagnosticsManager';
 import { FragmentHoverHighlighter } from './services/hoverHighlighter';
 import { FragmentStatusBarManager } from './services/statusBarManager';
@@ -8,23 +8,23 @@ import {
   FragmentVersionInfo,
   PushFragmentsResult,
   PullFragmentsResult
-} from 'fragments-protocol';
+} from 'fgmpack-protocol';
 import { isProcessableDocument } from './utils/documentFilters';
 
-let fragmentsClient: FragmentsLanguageClient;
+let client: Client;
 let diagnosticsManager: FragmentDiagnosticsManager;
 let hoverHighlighter: FragmentHoverHighlighter;
 let statusBarManager: FragmentStatusBarManager;
 
 export async function activate(context: vscode.ExtensionContext) {
-  fragmentsClient = new FragmentsLanguageClient(context.extensionUri.fsPath);
+  client = new Client();
   diagnosticsManager = new FragmentDiagnosticsManager();
-  hoverHighlighter = new FragmentHoverHighlighter(fragmentsClient);
-  statusBarManager = new FragmentStatusBarManager(fragmentsClient);
+  hoverHighlighter = new FragmentHoverHighlighter(client);
+  statusBarManager = new FragmentStatusBarManager(client);
 
-  context.subscriptions.push(fragmentsClient, diagnosticsManager, hoverHighlighter, statusBarManager);
+  context.subscriptions.push(client, diagnosticsManager, hoverHighlighter, statusBarManager);
 
-  await fragmentsClient.start();
+  await client.start();
   hoverHighlighter.register();
   await statusBarManager.initialize();
 
@@ -46,8 +46,8 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-  if (fragmentsClient) {
-    await fragmentsClient.stop();
+  if (client) {
+    await client.stop();
   }
 }
 
@@ -55,8 +55,8 @@ async function pullFragmentsForOpenDocuments() {
   const documents = vscode.workspace.textDocuments.filter(isProcessableDocument);
   for (const document of documents) {
     try {
-      await fragmentsClient.onDocumentOpen(document);
-      const result: PullFragmentsResult = await fragmentsClient.pullFragments(document);
+      await client.onDocumentOpen(document);
+      const result: PullFragmentsResult = await client.pullFragments(document);
       if (result.hasChanges) {
         await document.save();
       }
@@ -71,10 +71,10 @@ async function handleDocumentOpen(document: vscode.TextDocument) {
     return;
   }
 
-  await fragmentsClient.onDocumentOpen(document);
+  await client.onDocumentOpen(document);
 
   try {
-    const result: PullFragmentsResult = await fragmentsClient.pullFragments(document);
+    const result: PullFragmentsResult = await client.pullFragments(document);
     if (result.hasChanges) {
       await document.save();
     }
@@ -89,7 +89,7 @@ async function handleDocumentChange(event: vscode.TextDocumentChangeEvent) {
   }
 
   try {
-    await fragmentsClient.onDocumentChange(event.document);
+    await client.onDocumentChange(event.document);
   } catch (error) {
     console.warn(`Failed to process document change for ${event.document.fileName}:`, error);
   }
@@ -101,7 +101,7 @@ async function handleDocumentClose(document: vscode.TextDocument) {
   }
 
   try {
-    await fragmentsClient.onDocumentClose(document);
+    await client.onDocumentClose(document);
   } catch (error) {
     console.warn(`Failed to process document close for ${document.fileName}:`, error);
   }
@@ -114,7 +114,7 @@ async function handleDocumentSave(document: vscode.TextDocument) {
   }
 
   try {
-    const result: PushFragmentsResult = await fragmentsClient.pushFragments(document);
+    const result: PushFragmentsResult = await client.pushFragments(document);
     if (!result.success && result.issues && result.issues.length > 0) {
       diagnosticsManager.setIssues(document, result.issues);
       vscode.window.showErrorMessage(
@@ -139,9 +139,9 @@ async function handleDocumentSave(document: vscode.TextDocument) {
 }
 
 function registerGetVersionCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand('fragments.getVersion', async () => {
+  return vscode.commands.registerCommand('fgmpack.getVersion', async () => {
     try {
-      const result: FragmentVersionInfo = await fragmentsClient.getVersion();
+      const result: FragmentVersionInfo = await client.getVersion();
       vscode.window.showInformationMessage(`Active version: ${result.activeVersion}`);
     } catch (error) {
       vscode.window.showErrorMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -150,9 +150,9 @@ function registerGetVersionCommand(): vscode.Disposable {
 }
 
 function registerListVersionsCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand('fragments.listVersions', async () => {
+  return vscode.commands.registerCommand('fgmpack.listVersions', async () => {
     try {
-      const result: FragmentVersionInfo = await fragmentsClient.getVersion();
+      const result: FragmentVersionInfo = await client.getVersion();
       if (result && result.availableVersions) {
         const versionList = result.availableVersions
           .map((v: string) => `${v}${v === result.activeVersion ? ' (active)' : ''}`)
@@ -168,7 +168,7 @@ function registerListVersionsCommand(): vscode.Disposable {
 }
 
 function registerInsertMarkerCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand('fragments.insertMarker', async () => {
+  return vscode.commands.registerCommand('fgmpack.insertMarker', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       vscode.window.showErrorMessage('No active editor found');
@@ -183,7 +183,7 @@ function registerInsertMarkerCommand(): vscode.Disposable {
       const indentationMatch = lineContent.match(/^(\s*)/);
       const indentation = indentationMatch ? indentationMatch[1] : '';
 
-      const result = await fragmentsClient.insertMarker(
+      const result = await client.insertMarker(
         document.languageId,
         lineContent,
         indentation
@@ -207,7 +207,7 @@ function registerInsertMarkerCommand(): vscode.Disposable {
 }
 
 function registerSwitchVersionCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand('fragments.switchVersion', async () => {
+  return vscode.commands.registerCommand('fgmpack.switchVersion', async () => {
     try {
       const openDocuments = vscode.workspace.textDocuments.filter(isProcessableDocument);
       const unsavedDocs = openDocuments.filter((doc: vscode.TextDocument) => doc.isDirty);
@@ -231,7 +231,7 @@ function registerSwitchVersionCommand(): vscode.Disposable {
         }
       }
 
-      const versionData = await fragmentsClient.getVersion();
+      const versionData = await client.getVersion();
       if (!versionData || !versionData.availableVersions) {
         vscode.window.showWarningMessage('No versions found. Initialize fragments first.');
         return;
@@ -256,7 +256,7 @@ function registerSwitchVersionCommand(): vscode.Disposable {
         return;
       }
 
-      const result: FragmentChangeVersionResult = await fragmentsClient.switchVersion(selectedItem.version);
+      const result: FragmentChangeVersionResult = await client.switchVersion(selectedItem.version);
 
       if (result.success) {
         const updatedCount = result.documents.length;
