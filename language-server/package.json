@@ -2,16 +2,16 @@
   "name": "fgmpack-language-server",
   "version": "0.1.0",
   "description": "Language server for fgmpack",
-  "main": "dist/server.js",
+  "main": "../dist/language-server/server.js",
   "bin": {
-    "fgmpack-language-server": "dist/server.js"
+    "fgmpack-language-server": "../dist/language-server/server.js"
   },
   "scripts": {
     "build": "webpack",
     "build:dev": "webpack --mode development",
-    "build:binary": "npm run build && pkg dist/server.js --targets node18-linux-x64 --output dist/bin/fgmpackd-linux-x64 && pkg dist/server.js --targets node18-macos-x64 --output dist/bin/fgmpackd-macos-x64 && pkg dist/server.js --targets node18-win-x64 --output dist/bin/fgmpackd-win-x64.exe",
+    "build:binary": "npm run build && mkdir -p ../dist/language-server/bin && pkg ../dist/language-server/server.js --targets node18-linux-x64,node18-macos-x64,node18-win-x64 --output ../dist/language-server/bin/fgmpackd",
     "dev": "tsc --build --watch",
-    "start": "node dist/server.js",
+    "start": "node ../dist/language-server/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
@@ -23,8 +23,8 @@
   "author": "getrafty.org",
   "license": "MIT",
   "dependencies": {
-    "fgmpack-db": "file:../fgmpack-db",
-    "fgmpack-protocol": "file:../protocol",
+    "fgmpack-db": "*",
+    "fgmpack-protocol": "*",
     "ignore": "^5.3.1"
   },
   "devDependencies": {

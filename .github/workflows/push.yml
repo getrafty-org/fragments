@@ -1,0 +1,94 @@
+name: Push
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+-*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Install deps for ALL workspaces from the repo root
+      - name: Install dependencies (workspaces)
+        run: npm ci
+
+      # Build all workspace packages (protocol, db, language-server, vscode-extension)
+      - name: Build all packages
+        run: npm run build
+
+      # Build language server binaries (node18 targets)
+      - name: Build language server binaries
+        run: npm run package:server
+
+      # Build VS Code extension (.vsix)
+      - name: Build VS Code extension
+        run: npm run package
+
+      # Prepare release artifacts
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release
+          cp dist/language-server/bin/fgmpackd-linux release/fgmpack-language-server-linux-x64
+          cp dist/vscode-extension/bin/*.vsix release/fgmpack.vsix
+
+      - name: Checksums
+        run: |
+          (cd release && sha256sum fgmpack-language-server-linux-x64 fgmpack.vsix > SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            release/fgmpack-language-server-linux-x64
+            release/fgmpack.vsix
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+
+  publish:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets
+          merge-multiple: true
+          path: release
+
+      - name: Create Release (auto notes; latest for stable tags)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }} # e.g. v1.2 or v1.2-rc1
+        run: |
+          PRERELEASE_FLAG=""
+          LATEST_FLAG="--latest"
+          if [[ "$TAG" == *"-"* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+            LATEST_FLAG=""   # don't mark RC/beta as latest
+          fi
+
+          gh release create "$TAG" release/* \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            $LATEST_FLAG

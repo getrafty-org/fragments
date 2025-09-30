@@ -1,7 +1,7 @@
 {
   "name": "fgmpack",
-  "displayName": "Fragment Pack",
-  "description": "Manage versioned code fragments",
+  "displayName": "fgmpack",
+  "description": "Inject versioned text fragments in the source code.",
   "version": "0.1.0",
   "publisher": "getrafty",
   "engines": {
@@ -13,7 +13,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./dist/extension.js",
+  "main": "./extension.js",
   "contributes": {
     "commands": [
       {
@@ -54,6 +54,26 @@
         }
       ]
     }
+  },
+  "scripts": {
+    "build": "webpack --mode development",
+    "watch": "webpack --mode development --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "vsce:prepare": "mkdir -p ../dist/vscode-extension/bin && cp package.json ../dist/vscode-extension/ && cp ../.vscodeignore ../dist/vscode-extension/ && cp ../LICENSE ../dist/vscode-extension/ 2>/dev/null || true",
+    "vsce:package": "npm run package && npm run vsce:prepare && cd ../dist/vscode-extension && npx vsce package --no-dependencies --out ./bin/",
+    "install-extension": "npm run vsce:package && code --install-extension ../dist/vscode-extension/bin/*.vsix"
+  },
+  "dependencies": {
+    "fgmpack-db": "*",
+    "fgmpack-protocol": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.74.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.6.0",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
   },
   "private": true
 }

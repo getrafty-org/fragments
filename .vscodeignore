@@ -1,27 +1,15 @@
-# Source code - exclude from extension package
-vscode-extension/src/**
-protocol/src/**
-language-server/src/**
+# Package metadata files (keep these)
+!package.json
+!LICENSE
+!.vscodeignore
 
-# Node modules
-**/node_modules/**
+# Keep only the bundled extension
+!extension.js
+!extension.js.map
 
-# TypeScript outputs we don't need
+# Exclude everything else
 **/*.d.ts
 **/*.d.ts.map
 **/tsconfig.*
-
-# Build configuration files
-webpack.config.js
-tsconfig.json
-
-# Development files
-**/*.test.ts
-**/*.test.js
-**/*.log
-.gitignore
-.vscodeignore
-
-# Keep only the bundled extension files
-!dist/extension.js
-!dist/extension.js.map
+*.tsbuildinfo
+src/

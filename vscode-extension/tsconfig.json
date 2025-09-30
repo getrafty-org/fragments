@@ -1,16 +1,18 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
+    "outDir": "../dist/vscode-extension",
+    "rootDir": "./src",
     "baseUrl": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "tsBuildInfoFile": "../dist/vscode-extension/.tsbuildinfo",
     "types": ["node", "vscode"],
     "paths": {
-      "fgmpack-protocol": ["../protocol/dist/index"]
+      "fgmpack-protocol": ["../dist/protocol/index"]
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../protocol" }
-  ]
+  "exclude": ["node_modules", "dist"]
 }

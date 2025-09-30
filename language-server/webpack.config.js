@@ -7,14 +7,14 @@ module.exports = [
     mode: 'production',
     entry: './src/server.ts',
     output: {
-      path: path.resolve(__dirname, 'dist'),
+      path: path.resolve(__dirname, '../dist/language-server'),
       filename: 'server.js'
     },
     resolve: {
       extensions: ['.ts', '.js'],
       alias: {
-        'fgmpack-protocol': path.resolve(__dirname, '../protocol/dist/index.js'),
-        'fgmpack-db': path.resolve(__dirname, '../fgmpack-db/dist/index.js')
+        'fgmpack-protocol': path.resolve(__dirname, '../dist/protocol/index.js'),
+        'fgmpack-db': path.resolve(__dirname, '../dist/fgmpack-db/index.js')
       }
     },
     module: {

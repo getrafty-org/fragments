@@ -2,18 +2,18 @@
   "name": "fgmpack-db",
   "version": "0.1.0",
   "description": "Storage engine for fgmpack",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "../dist/fgmpack-db/index.js",
+  "types": "../dist/fgmpack-db/index.d.ts",
   "bin": {
-    "fgmpack-storage-bench": "dist/storage-bench.js"
+    "fgmpack-storage-bench": "../dist/fgmpack-db/storage-bench.js"
   },
   "scripts": {
     "build": "tsc -b",
     "test": "jest",
-    "bench": "npm run build && node dist/storage-bench.js"
+    "bench": "npm run build && node ../dist/fgmpack-db/storage-bench.js"
   },
   "dependencies": {
-    "fgmpack-protocol": "file:../protocol"
+    "fgmpack-protocol": "*"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
