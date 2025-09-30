@@ -17,14 +17,16 @@ let hoverHighlighter: FragmentHoverHighlighter;
 let statusBarManager: FragmentStatusBarManager;
 
 export async function activate(context: vscode.ExtensionContext) {
-  client = new Client();
+  client = new Client(context);
   diagnosticsManager = new FragmentDiagnosticsManager();
   hoverHighlighter = new FragmentHoverHighlighter(client);
   statusBarManager = new FragmentStatusBarManager(client);
 
   context.subscriptions.push(client, diagnosticsManager, hoverHighlighter, statusBarManager);
 
+  await client.init();
   await client.start();
+  
   hoverHighlighter.register();
   await statusBarManager.initialize();
 

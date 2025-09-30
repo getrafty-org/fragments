@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
+import { BinaryDownloader } from './utils/binaryDownloader';
 import { spawn, ChildProcess } from 'child_process';
 import {
   FragmentAllRangesResult,
@@ -28,8 +27,11 @@ export class Client {
   private requestId = 0;
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private readonly operationQueue = new Map<string, Promise<unknown>>();
+  private readonly binaryDownloader: BinaryDownloader;
 
-  constructor() {}
+  constructor(context: vscode.ExtensionContext) {
+    this.binaryDownloader = new BinaryDownloader(context);
+  }
 
   async start(): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -37,7 +39,8 @@ export class Client {
       throw new Error('No workspace folder found');
     }
 
-    const serverPath = await this.resolveServerPath();
+    const serverPath = this.binaryDownloader.getLocalBinaryPath();
+
     this.serverProcess = spawn(serverPath, ['--root', workspaceFolder.uri.fsPath], {
       stdio: ['pipe', 'pipe', 'inherit'],
       cwd: workspaceFolder.uri.fsPath
@@ -164,39 +167,11 @@ export class Client {
     void this.stop();
   }
 
-  private async resolveServerPath(): Promise<string> {
-    const systemServer = await this.findSystemServer();
-    if (systemServer) {
-      return systemServer;
+  async init(): Promise<void> {
+    if (await this.binaryDownloader.isBinaryInstalled()) {
+      return;
     }
-
-    throw new Error("fgmpackd not found");
-  }
-
-  private async findSystemServer(): Promise<string | null> {
-    return new Promise((resolve) => {
-      process.arch
-      const which = process.platform === 'win32' ? 'where' : 'which';
-      const ext = process.platform === 'win32' ? '.exe' : '';
-      const serverName = `fgmpackd-${process.platform}-${process.arch}${ext}`
-
-      const child = spawn(which, [serverName], { stdio: 'pipe' });
-      let output = '';
-
-      child.stdout?.on('data', (data) => {
-        output += data.toString();
-      });
-
-      child.on('close', (code) => {
-        if (code === 0 && output.trim()) {
-          resolve(output.trim().split('\n')[0]);
-        } else {
-          resolve(null);
-        }
-      });
-
-      child.on('error', () => resolve(null));
-    });
+    await this.binaryDownloader.downloadBinary();
   }
 
   private async applyDocumentChanges(changes: FragmentDocumentChange[]): Promise<void> {

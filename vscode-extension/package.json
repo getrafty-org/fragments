@@ -15,6 +15,19 @@
   ],
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "fgmpack",
+      "properties": {
+        "fgmpack.binaryRepository": {
+          "type": "string",
+          "default": "getrafty-org/fragments"
+        },
+        "fgmpack.binaryVersion": {
+          "type": "string",
+          "default": "latest"
+        }
+      }
+    },
     "commands": [
       {
         "command": "fgmpack.getVersion",
