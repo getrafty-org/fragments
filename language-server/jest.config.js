@@ -6,7 +6,16 @@ module.exports = {
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
-  collectCoverageFrom: ['src/storage.ts'],
+  moduleNameMapper: {
+    '^fgmpack-protocol$': '<rootDir>/../protocol/src/index.ts',
+    '^fgmpack-db$': '<rootDir>/../fgmpack-db/src/index.ts'
+  },
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.test.ts',
+    '!src/__tests__/**/*'
+  ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
+  setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
 };

@@ -23,6 +23,7 @@
   "author": "getrafty.org",
   "license": "MIT",
   "dependencies": {
+    "fgmpack-db": "file:../fgmpack-db",
     "fgmpack-protocol": "file:../protocol",
     "ignore": "^5.3.1"
   },

@@ -6,8 +6,8 @@ import { DocumentManager } from './documentManager';
 import { FragmentFileLocator } from './fragmentFileLocator';
 import { FragmentUtils, FRAGMENT_END_TOKEN, FRAGMENT_START_REGEX } from './fragmentUtils';
 import { RevisionState } from './revisionState';
-import { Storage } from './storage';
-import { FragmentId, isValidFragmentId } from 'fgmpack-protocol';
+import { Storage } from 'fgmpack-db';
+import { FragmentID, isValidFragmentId } from 'fgmpack-protocol';
 import {
   AllRangesParams,
   ChangeVersionParams,
@@ -44,11 +44,11 @@ export class FragmentService {
     private readonly revisionState: RevisionState
   ) {}
 
-  private async generateUniqueFragmentId(): Promise<FragmentId> {
+  private async generateUniqueFragmentID(): Promise<FragmentID> {
     const maxAttempts = 100;
 
     for (let attempts = 0; attempts < maxAttempts; attempts++) {
-      const id = randomBytes(2).toString('hex') as FragmentId;
+      const id = randomBytes(2).toString('hex') as FragmentID;
       const existing = await this.storage.getFragmentContent(id, await this.storage.getActiveVersion());
 
       if (existing === null) {
@@ -61,15 +61,15 @@ export class FragmentService {
 
   async pullFragments(params: PullFragmentsParams): Promise<PullFragmentsResult> {
     const resolution = await this.resolveContent(params);
-    const activeVersion = await this.storage.getActiveVersion(); // Avoid full load()
+    const activeVersion = await this.storage.getActiveVersion();
     const fragments = FragmentUtils.parseFragmentsWithLines(resolution.content);
 
     for (const fragment of fragments) {
       if (!isValidFragmentId(fragment.id)) {
         continue; // Skip invalid fragment IDs
       }
-      const fragmentId = fragment.id as FragmentId;
-      await this.storage.ensureFragment(fragmentId, fragment.currentContent);
+      const fragmentId = fragment.id as FragmentID;
+      await this.storage.upsertFragment(fragmentId, fragment.currentContent);
     }
 
     let updatedContent = resolution.content;
@@ -79,7 +79,7 @@ export class FragmentService {
       if (!isValidFragmentId(fragment.id)) {
         continue; // Skip invalid fragment IDs
       }
-      const fragmentId = fragment.id as FragmentId;
+      const fragmentId = fragment.id as FragmentID;
       const fragmentData = await this.storage.getFragmentContent(fragmentId, activeVersion);
       if (fragmentData !== null && fragmentData !== fragment.currentContent) {
         updatedContent = FragmentUtils.replaceFragmentContent(updatedContent, fragment.id, fragmentData);
@@ -127,8 +127,8 @@ export class FragmentService {
       if (!isValidFragmentId(fragment.id)) {
         continue; // Skip invalid fragment IDs
       }
-      const fragmentId = fragment.id as FragmentId;
-      await this.storage.ensureFragment(fragmentId, fragment.currentContent);
+      const fragmentId = fragment.id as FragmentID;
+      await this.storage.upsertFragment(fragmentId, fragment.currentContent);
     }
 
     let savedCount = 0;
@@ -136,8 +136,8 @@ export class FragmentService {
       if (!isValidFragmentId(fragment.id)) {
         continue; // Skip invalid fragment IDs
       }
-      const fragmentId = fragment.id as FragmentId;
-      await this.storage.updateFragment(fragmentId, activeVersion, fragment.currentContent);
+      const fragmentId = fragment.id as FragmentID;
+      await this.storage.upsertFragment(fragmentId, fragment.currentContent, activeVersion);
       savedCount++;
     }
 
@@ -153,7 +153,7 @@ export class FragmentService {
   }
 
   async changeVersion(params: ChangeVersionParams): Promise<FragmentChangeVersionResult> {
-    await this.storage.switchVersion(params.version);
+    await this.storage.setActiveVersion(params.version);
 
     const processedUris = new Set<string>();
     const documentChanges: FragmentDocumentChange[] = [];
@@ -211,7 +211,7 @@ export class FragmentService {
   }
 
   async insertMarker(params: InsertMarkerParams): Promise<InsertMarkerResult> {
-    const fragmentId = await this.generateUniqueFragmentId();
+    const fragmentId = await this.generateUniqueFragmentID();
     const markerResult = FragmentUtils.generateMarkerInsertionWithId({
       fragmentId,
       languageId: params.languageId,
@@ -257,7 +257,7 @@ export class FragmentService {
     const endMatch = lineContent.includes(FRAGMENT_END_TOKEN);
 
     if (startMatch) {
-      const fragmentId = startMatch[2] as FragmentId;
+      const fragmentId = startMatch[2] as FragmentID;
       const endLine = this.findMatchingEndLine(lines, params.line + 1);
       if (endLine !== -1) {
         const startLineContent = lines[params.line];
@@ -273,7 +273,7 @@ export class FragmentService {
     } else if (endMatch) {
       const result = this.findMatchingStartLine(lines, params.line - 1);
       if (result && typeof result.startLine === 'number' && result.fragmentId) {
-        const fragmentId = result.fragmentId as FragmentId;
+        const fragmentId = result.fragmentId as FragmentID;
         const startLineContent = lines[result.startLine];
         const endLineContent = lines[params.line];
         return {
@@ -353,7 +353,7 @@ export class FragmentService {
 function buildMarkerSymbolRanges(
   lineIndex: number,
   content: string,
-  fragmentId: FragmentId,
+  fragmentId: FragmentID,
   isStartMarker: boolean,
   isEndMarker: boolean
 ): FragmentMarkerRange[] {

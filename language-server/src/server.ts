@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'path';
-import { FragmentStorage, Storage } from './storage';
+import { FragmentStorage, Storage } from 'fgmpack-db';
 import { DocumentManager } from './documentManager';
 import { FragmentService } from './fragmentService';
 import { WorkspaceFragmentLocator } from './fragmentFileLocator';
@@ -32,7 +32,7 @@ export class FragmentsServer {
 
   constructor(storageFile: string) {
     const encryptionKey = process.env.FRAGMENTS_ENCRYPTION_KEY;
-    this.storage = new FragmentStorage(storageFile, encryptionKey);
+    this.storage = new FragmentStorage(storageFile);
     const workspaceRoot = process.cwd();
     const fileLocator = new WorkspaceFragmentLocator(workspaceRoot);
     const revisionState = new MemoryRevisionState();

@@ -6,12 +6,14 @@
     "declarationMap": true,
     "baseUrl": "./",
     "paths": {
-      "fgmpack-protocol": ["../protocol/src/index"]
+      "fgmpack-protocol": ["../protocol/src/index"],
+      "fgmpack-db": ["../fgmpack-db/src/index"]
     }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
   "references": [
-    { "path": "../protocol" }
+    { "path": "../protocol" },
+    { "path": "../fgmpack-db" }
   ]
 }

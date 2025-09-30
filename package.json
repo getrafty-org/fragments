@@ -60,10 +60,11 @@
     }
   },
   "scripts": {
-    "bootstrap": "npm install --prefix protocol && npm install --prefix language-server && npm install --prefix vscode-extension",
+    "bootstrap": "npm install --prefix protocol && npm install --prefix fgmpack-db && npm install --prefix language-server && npm install --prefix vscode-extension",
     "build": "npm run build:deps && webpack --mode development",
-    "build:deps": "npm run build:protocol && npm run build:language-server",
+    "build:deps": "npm run build:protocol && npm run build:db && npm run build:language-server",
     "build:protocol": "npm run build --prefix protocol",
+    "build:db": "npm run build --prefix fgmpack-db",
     "build:language-server": "npm run build --prefix language-server",
     "build:language-server:binary": "npm run build:binary --prefix language-server",
     "compile": "npm run build",
