@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./",
+    "declarationMap": true,
+    "paths": {
+      "fgmpack-protocol": ["../protocol/src/index"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "src/__tests__"],
+  "references": [
+    { "path": "../protocol" }
+  ]
+}
