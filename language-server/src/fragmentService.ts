@@ -228,14 +228,6 @@ export class FragmentService {
   }
 
   async getVersion(): Promise<FragmentVersionInfo> {
-    if (!this.storage.isOpen()) {
-      return {
-        activeVersion: 'public',
-        availableVersions: ['public', 'private'],
-        initialized: false
-      };
-    }
-
     await this.storage.open();
     return {
       activeVersion: await this.storage.getActiveVersion(),

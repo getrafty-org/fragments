@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 const CODE_EXTENSIONS = new Set([
-  '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt',
+  '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', 'h', '.hpp', '.c', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt',
   '.dart', '.sql', '.html', '.css', '.scss', '.less', '.vue', '.svelte'
 ]);
 

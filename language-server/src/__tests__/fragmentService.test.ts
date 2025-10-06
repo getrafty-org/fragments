@@ -38,7 +38,7 @@ describe('FragmentService', () => {
       const uri = 'file:///test.js';
       const originalContent = `
 // ==== YOUR CODE: @abcd ====
-original content
+
 // ==== END YOUR CODE ====
 `;
 
@@ -96,7 +96,7 @@ same content
       const filePath = '/path/to/file.js';
       const fileContent = `
 // ==== YOUR CODE: @1234 ====
-file content
+
 // ==== END YOUR CODE ====
 `;
 
@@ -210,7 +210,7 @@ version content 1
 
       const content2 = `
 // ==== YOUR CODE: @5678 ====
-version content 2
+
 // ==== END YOUR CODE ====
 `;
 

@@ -25,10 +25,8 @@ export interface MarkerInsertionResult {
 }
 
 export class FragmentUtils {
-  // Pattern to match fragment markers
   public static readonly FRAGMENT_PATTERN = /\/\/ ==== YOUR CODE: @(.*?) ====(.*?)\/\/ ==== END YOUR CODE ====/gs;
 
-  // Comment styles for different languages
   private static readonly COMMENT_STYLES: Record<string, { start: string; end: string }> = {
     'javascript': { start: '//', end: '' },
     'typescript': { start: '//', end: '' },
@@ -62,23 +60,14 @@ export class FragmentUtils {
     'matlab': { start: '%', end: '' }
   };
 
-  /**
-   * Generate a unique fragment ID
-   */
   public static generateFragmentId(): FragmentID {
     return randomBytes(2).toString('hex') as FragmentID; // 4 hex chars, compact 2-byte ID
   }
 
-  /**
-   * Get comment style for given language
-   */
   public static getCommentStyle(languageId: string): { start: string; end: string } {
     return this.COMMENT_STYLES[languageId] || { start: '//', end: '' };
   }
 
-  /**
-   * Create fragment marker text for given language and indentation
-   */
   public static createFragmentMarker(
     fragmentId: FragmentID,
     languageId: string,
@@ -96,9 +85,6 @@ export class FragmentUtils {
     return `${startLine}\n${indentation}\n${endLineBase}`;
   }
 
-  /**
-   * Generate a complete marker insertion response
-   */
   public static generateMarkerInsertion(request: MarkerInsertionRequest): MarkerInsertionResult {
     const fragmentId = this.generateFragmentId();
     const indentation = request.indentation || '';
@@ -111,9 +97,6 @@ export class FragmentUtils {
     };
   }
 
-  /**
-   * Generate a complete marker insertion response with provided ID
-   */
   public static generateMarkerInsertionWithId(request: MarkerInsertionWithIdRequest): MarkerInsertionResult {
     const indentation = request.indentation || '';
     const markerText = this.createFragmentMarker(request.fragmentId, request.languageId, indentation);
@@ -125,17 +108,11 @@ export class FragmentUtils {
     };
   }
 
-  /**
-   * Extract indentation from a line of text
-   */
   public static extractIndentation(lineContent: string): string {
     const match = lineContent.match(/^(\s*)/);
     return match ? match[1] : '';
   }
 
-  /**
-   * Parse fragment from content with line numbers using stack-based approach for proper nesting
-   */
   public static parseFragmentsWithLines(content: string): Array<{
     id: FragmentID;
     startLine: number;
@@ -152,7 +129,6 @@ export class FragmentUtils {
       indentation: string;
     }> = [];
 
-    // Stack to track nested fragments
     const fragmentStack: Array<{
       id: FragmentID;
       startLine: number;
@@ -166,7 +142,6 @@ export class FragmentUtils {
       const endMatch = line.includes('==== END YOUR CODE ====');
 
       if (startMatch) {
-        // Found a start marker - push to stack
         const fragmentId = startMatch[2] as FragmentID;
         const indentation = this.extractIndentation(line);
 
@@ -177,7 +152,6 @@ export class FragmentUtils {
           contentLines: []
         });
       } else if (endMatch && fragmentStack.length > 0) {
-        // Found an end marker - pop from stack
         const fragment = fragmentStack.pop()!;
 
         // Create the fragment with all content between start and end
@@ -191,20 +165,15 @@ export class FragmentUtils {
           indentation: fragment.indentation
         });
       } else if (fragmentStack.length > 0) {
-        // We're inside fragment(s) - add this line to all open fragments
         for (const openFragment of fragmentStack) {
           openFragment.contentLines.push(line);
         }
       }
     }
 
-    // Sort fragments by start line for consistent ordering
     return fragments.sort((a, b) => a.startLine - b.startLine);
   }
 
-  /**
-   * Detect fragments that are nested inside other fragments
-   */
   public static findNestedFragments(content: string): Array<{
     fragmentId: FragmentID;
     parentFragmentId: FragmentID;
@@ -248,9 +217,6 @@ export class FragmentUtils {
     return nestedFragments;
   }
 
-  /**
-   * Replace fragment content in file content
-   */
   public static replaceFragmentContent(
     fileContent: string,
     fragmentId: FragmentID,
@@ -271,13 +237,10 @@ export class FragmentUtils {
 
     // Insert new content
     if (newContent.trim()) {
-      // Handle escaped newlines from JSON
       const processedContent = newContent.replace(/\\n/g, '\n');
       const contentLines = processedContent.split('\n');
-      // Preserve exact indentation as stored - don't modify it
       newLines.splice(fragment.startLine + 1, 0, ...contentLines);
     } else {
-      // Just add empty line
       newLines.splice(fragment.startLine + 1, 0, '');
     }
 
