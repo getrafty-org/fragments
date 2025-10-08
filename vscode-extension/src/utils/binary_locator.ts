@@ -2,15 +2,18 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const mkdir = promisify(fs.mkdir);
 const chmod = promisify(fs.chmod);
 const access = promisify(fs.access);
+const execFileAsync = promisify(execFile);
 
-const BIN_NAME_PREFIX = "fgmpack-language-server";
+const BIN_NAME_PREFIX = "fgmpackd";
+const BASE_URL = "https://github.com/getrafty-org/fragments/releases/latest/download/"
 
-export class BinaryDownloader {
+export class BinaryLocator {
   private readonly localBinDir: string;
 
   constructor(context: vscode.ExtensionContext) {
@@ -19,23 +22,52 @@ export class BinaryDownloader {
     this.localBinDir = context.globalStorageUri.fsPath;
   }
 
-  getLocalBinaryPath(): string {
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const binaryName = `${BIN_NAME_PREFIX}-${process.platform}-${process.arch}${ext}`;
-    return path.join(this.localBinDir, binaryName);
+  async locate(): Promise<string> {
+    const systemBinary = await this.findBinary();
+    if (systemBinary) {
+      return systemBinary;
+    }
+    return this.downloadBinary();
   }
 
-  async isBinaryInstalled(): Promise<boolean> {
+  private async findBinary(): Promise<string | null> {
+    const binaryName = this.getBinaryName();
     try {
-      await access(this.getLocalBinaryPath(), fs.constants.X_OK);
-      return true;
+      const { stdout } = await execFileAsync(process.platform === 'win32' ? 'where' : 'which', [binaryName]);
+      const candidates = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      for (const candidate of candidates) {
+        try {
+          await access(
+            candidate,
+            process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK
+          );
+          return candidate;
+        } catch {
+          continue;
+        }
+      }
     } catch {
-      return false;
     }
+
+    try {
+      await access(path.join(this.localBinDir, binaryName), fs.constants.X_OK)
+      return path.join(this.localBinDir, binaryName);
+    } catch {
+    }
+
+    return null;
+  }
+
+  private getBinaryName(): string {
+    return `${BIN_NAME_PREFIX}${process.platform === 'win32' ? '.exe' : ''}`;
   }
 
   async downloadBinary(): Promise<string> {
-    const binaryPath = this.getLocalBinaryPath();
+    const binaryPath = path.join(this.localBinDir, this.getBinaryName());
 
     await mkdir(this.localBinDir, { recursive: true });
 
@@ -54,7 +86,6 @@ export class BinaryDownloader {
       }
     );
 
-    // Make executable on Unix systems
     if (process.platform !== 'win32') {
       await chmod(binaryPath, 0o755);
     }
@@ -63,9 +94,7 @@ export class BinaryDownloader {
   }
 
   private async getDownloadUrl(): Promise<string> {
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const assetName = `${BIN_NAME_PREFIX}-${process.platform}-${process.arch}${ext}`;
-    return `https://github.com/getrafty-org/fragments/releases/latest/download/${assetName}`;
+    return `${BASE_URL}${this.getBinaryName()}`;
   }
 
   private downloadFile(

@@ -2,10 +2,10 @@
 
 import * as path from 'path';
 import { FragmentStorage, Storage } from 'fgmpack-db';
-import { DocumentManager } from './documentManager';
-import { FragmentService } from './fragmentService';
-import { WorkspaceFragmentLocator } from './fragmentFileLocator';
-import { MemoryRevisionState } from './revisionState';
+import { DocumentManager } from './document_manager';
+import { FragmentService } from './fragment_service';
+import { WorkspaceFragmentLocator } from './fragment_file_locator';
+import { MemoryRevisionState } from './revision_state';
 import {
   AllRangesParams,
   ChangeVersionParams,

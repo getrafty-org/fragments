@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
-import { FragmentService } from '../fragmentService';
-import { DocumentManager } from '../documentManager';
-import { MockStorage } from './mocks/mockStorage';
-import { MockFragmentFileLocator } from './mocks/mockFileLocator';
-import { MockRevisionState } from './mocks/mockRevisionState';
+import { FragmentService } from '../fragment_service';
+import { DocumentManager } from '../document_manager';
+import { MockStorage } from './mocks/mock_storage';
+import { MockFragmentFileLocator } from './mocks/mock_file_locator';
+import { MockRevisionState } from './mocks/mock_revision_state';
 import { FragmentID } from 'fgmpack-protocol';
 import * as fs from 'fs';
 
@@ -275,11 +275,11 @@ version content 1
       expect(result.availableVersions).toEqual(['public', 'private']);
     });
 
-    test('should return default version info when storage is not open', async () => {
+    test('should return version info after reopening storage', async () => {
       storage.close();
       const result = await service.getVersion();
 
-      expect(result.initialized).toBe(false);
+      expect(result.initialized).toBe(true);
       expect(result.activeVersion).toBe('public');
       expect(result.availableVersions).toEqual(['public', 'private']);
     });

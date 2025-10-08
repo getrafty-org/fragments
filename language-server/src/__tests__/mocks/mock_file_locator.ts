@@ -1,4 +1,4 @@
-import { FragmentFileLocator } from '../../fragmentFileLocator';
+import { FragmentFileLocator } from '../../fragment_file_locator';
 
 export interface MockFragmentFile {
   path: string;

@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { FragmentUtils, FRAGMENT_START_PREFIX, FRAGMENT_END_TOKEN } from '../fragmentUtils';
+import { FragmentUtils, FRAGMENT_START_PREFIX, FRAGMENT_END_TOKEN } from '../fragment_utils';
 import { FragmentID } from 'fgmpack-protocol';
 
 describe('FragmentUtils', () => {

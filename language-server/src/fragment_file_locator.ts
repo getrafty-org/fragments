@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
 import { pathToFileURL } from 'url';
-import { FragmentUtils } from './fragmentUtils';
+import { FragmentUtils } from './fragment_utils';
 
 export interface DiscoveredFragmentFile {
   readonly path: string;

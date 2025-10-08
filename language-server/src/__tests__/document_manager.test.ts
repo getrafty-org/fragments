@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from '@jest/globals';
-import { DocumentManager, DocumentState } from '../documentManager';
+import { DocumentManager, DocumentState } from '../document_manager';
 
 describe('DocumentManager', () => {
   let docManager: DocumentManager;

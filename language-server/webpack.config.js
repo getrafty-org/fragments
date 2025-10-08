@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 module.exports = [
   // Main language server
@@ -10,6 +11,12 @@ module.exports = [
       path: path.resolve(__dirname, '../dist/language-server'),
       filename: 'server.js'
     },
+    plugins: [
+      new webpack.BannerPlugin({
+        banner: '#!/usr/bin/env node',
+        raw: true
+      })
+    ],
     resolve: {
       extensions: ['.ts', '.js'],
       alias: {

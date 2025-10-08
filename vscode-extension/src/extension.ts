@@ -1,34 +1,33 @@
 import * as vscode from 'vscode';
 import { Client } from './client';
-import { FragmentDiagnosticsManager } from './services/diagnosticsManager';
-import { FragmentHoverHighlighter } from './services/hoverHighlighter';
-import { FragmentStatusBarManager } from './services/statusBarManager';
+import { FragmentDiagnosticsManager } from './services/diagnostics_manager';
+import { FragmentHoverHighlighter } from './services/hover_highlighter';
+import { StatusBar } from './services/status_bar_manager';
 import {
   FragmentChangeVersionResult,
   FragmentVersionInfo,
   PushFragmentsResult,
   PullFragmentsResult
 } from 'fgmpack-protocol';
-import { isProcessableDocument } from './utils/documentFilters';
+import { isProcessableDocument } from './utils/document_filters';
 
 let client: Client;
 let diagnosticsManager: FragmentDiagnosticsManager;
 let hoverHighlighter: FragmentHoverHighlighter;
-let statusBarManager: FragmentStatusBarManager;
+let statusBar: StatusBar;
 
 export async function activate(context: vscode.ExtensionContext) {
   client = new Client(context);
   diagnosticsManager = new FragmentDiagnosticsManager();
   hoverHighlighter = new FragmentHoverHighlighter(client);
-  statusBarManager = new FragmentStatusBarManager(client);
+  statusBar = new StatusBar(client);
 
-  context.subscriptions.push(client, diagnosticsManager, hoverHighlighter, statusBarManager);
+  context.subscriptions.push(client, diagnosticsManager, hoverHighlighter, statusBar);
 
-  await client.init();
   await client.start();
-  
+
   hoverHighlighter.register();
-  await statusBarManager.initialize();
+  await statusBar.initialize();
 
   await pullFragmentsForOpenDocuments();
 
@@ -132,7 +131,7 @@ async function handleDocumentSave(document: vscode.TextDocument) {
         `Saved ${result.fragmentsSaved} fragments to ${result.activeVersion}`,
         3000
       );
-      await statusBarManager.refresh();
+      await statusBar.refresh();
     }
   } catch (error) {
     diagnosticsManager.clear(document);
@@ -274,7 +273,7 @@ function registerSwitchVersionCommand(): vscode.Disposable {
         }
 
         vscode.window.showInformationMessage(summaryParts.join('; '));
-        await statusBarManager.refresh();
+        await statusBar.refresh();
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Error switching versions: ${error instanceof Error ? error.message : 'Unknown error'}`);

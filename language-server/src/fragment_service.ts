@@ -2,10 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { randomBytes } from 'crypto';
-import { DocumentManager } from './documentManager';
-import { FragmentFileLocator } from './fragmentFileLocator';
-import { FragmentUtils, FRAGMENT_END_TOKEN, FRAGMENT_START_REGEX } from './fragmentUtils';
-import { RevisionState } from './revisionState';
+import { DocumentManager } from './document_manager';
+import { FragmentFileLocator } from './fragment_file_locator';
+import { FragmentUtils, FRAGMENT_END_TOKEN, FRAGMENT_START_REGEX } from './fragment_utils';
+import { RevisionState } from './revision_state';
 import { Storage } from 'fgmpack-db';
 import { FragmentID, isValidFragmentId } from 'fgmpack-protocol';
 import {
@@ -228,7 +228,6 @@ export class FragmentService {
   }
 
   async getVersion(): Promise<FragmentVersionInfo> {
-    await this.storage.open();
     return {
       activeVersion: await this.storage.getActiveVersion(),
       availableVersions: await this.storage.getAvailableVersions(),

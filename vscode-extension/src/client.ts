@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { BinaryDownloader } from './utils/binaryDownloader';
+import { BinaryLocator } from './utils/binary_locator';
 import { spawn, ChildProcess } from 'child_process';
 import {
   FragmentAllRangesResult,
@@ -27,10 +27,11 @@ export class Client {
   private requestId = 0;
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private readonly operationQueue = new Map<string, Promise<unknown>>();
-  private readonly binaryDownloader: BinaryDownloader;
+  private readonly binaryLocator: BinaryLocator;
+  private responseBuffer = '';
 
   constructor(context: vscode.ExtensionContext) {
-    this.binaryDownloader = new BinaryDownloader(context);
+    this.binaryLocator = new BinaryLocator(context);
   }
 
   async start(): Promise<void> {
@@ -39,7 +40,7 @@ export class Client {
       throw new Error('No workspace folder found');
     }
 
-    const serverPath = this.binaryDownloader.getLocalBinaryPath();
+    const serverPath = await this.binaryLocator.locate();
 
     this.serverProcess = spawn(serverPath, ['--root', workspaceFolder.uri.fsPath], {
       stdio: ['pipe', 'pipe', 'inherit'],
@@ -48,13 +49,20 @@ export class Client {
     console.info("fgmpackd started")
 
     this.serverProcess.stdout?.on('data', (data: Buffer) => {
-      const lines = data.toString().split('\n').filter((line: string) => line.trim());
-      for (const line of lines) {
-        try {
-          const response = JSON.parse(line) as FragmentResponseMessage;
-          this.handleResponse(response);
-        } catch (error) {
-          console.error('Failed to parse server response:', line, error);
+      this.responseBuffer += data.toString();
+
+      let newlineIndex;
+      while ((newlineIndex = this.responseBuffer.indexOf('\n')) !== -1) {
+        const line = this.responseBuffer.slice(0, newlineIndex);
+        this.responseBuffer = this.responseBuffer.slice(newlineIndex + 1);
+
+        if (line.trim()) {
+          try {
+            const response = JSON.parse(line) as FragmentResponseMessage;
+            this.handleResponse(response);
+          } catch (error) {
+            console.error('Failed to parse server response:', line.substring(0, 200), error);
+          }
         }
       }
     });
@@ -73,6 +81,7 @@ export class Client {
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
+      this.responseBuffer = '';
     }
   }
 
@@ -165,13 +174,6 @@ export class Client {
 
   dispose(): void {
     void this.stop();
-  }
-
-  async init(): Promise<void> {
-    if (await this.binaryDownloader.isBinaryInstalled()) {
-      return;
-    }
-    await this.binaryDownloader.downloadBinary();
   }
 
   private async applyDocumentChanges(changes: FragmentDocumentChange[]): Promise<void> {

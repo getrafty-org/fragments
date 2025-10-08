@@ -1,5 +1,5 @@
 {
-  "name": "fgmpack-language-server",
+  "name": "fgmpackd",
   "version": "0.1.0",
   "description": "Language server for fgmpack",
   "main": "../dist/language-server/server.js",
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "webpack",
     "build:dev": "webpack --mode development",
-    "build:binary": "npm run build && mkdir -p ../dist/language-server/bin && pkg ../dist/language-server/server.js --targets node18-linux-x64,node18-macos-x64,node18-win-x64 --output ../dist/language-server/bin/fgmpackd",
+    "build:binary": "npm run build && mkdir -p ../dist/language-server/bin && pkg ../dist/language-server/server.js --targets node18-linux-x64,node18-linux-arm64,node18-macos-x64 --out-path ../dist/language-server/bin && mv ../dist/language-server/bin/server-linux-x64 ../dist/language-server/bin/fgmpackd-linux-x86-64 && mv ../dist/language-server/bin/server-linux-arm64 ../dist/language-server/bin/fgmpackd-linux-arm64 && mv ../dist/language-server/bin/server-macos-x64 ../dist/language-server/bin/fgmpackd-macos-x86-64",
     "dev": "tsc --build --watch",
     "start": "node ../dist/language-server/server.js",
     "test": "jest",

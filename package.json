@@ -2,7 +2,7 @@
   "name": "fgmpack-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "Fragment Pack workspace - Manage versioned code fragment packs",
+  "description": "fgmpack",
   "repository": {
     "type": "git",
     "url": "https://github.com/getrafty/fragments.git"
@@ -14,17 +14,18 @@
     "vscode-extension"
   ],
   "scripts": {
-    "build": "npm run build:protocol && npm run build:db && npm run build:language-server && npm run build:extension",
-    "build:protocol": "npm run build -w fgmpack-protocol",
+    "build": "npm run build:protocol && npm run build:db && npm run build:fgmpackd && npm run build:extension",
     "build:db": "npm run build -w fgmpack-db",
-    "build:language-server": "npm run build -w fgmpack-language-server",
+    "build:protocol": "npm run build -w fgmpack-protocol",
     "build:extension": "npm run build -w fgmpack",
+    "build:fgmpackd": "npm run build -w fgmpackd",
     "compile": "npm run build",
     "watch": "npm run build && npm run watch -w fgmpack",
     "clean": "npm run clean --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "package": "npm run build && npm run vsce:package -w fgmpack",
-    "package:server": "npm run build:binary -w fgmpack-language-server"
+    "package:fgmpackd": "npm run build:binary -w fgmpackd",
+    "install:server": "npm run build:fgmpackd && mkdir -p ~/.local/bin && cp dist/language-server/server.js ~/.local/bin/fgmpackd && chmod +x ~/.local/bin/fgmpackd && echo 'Installed to ~/.local/bin/fgmpackd' && (echo $PATH | grep -q '.local/bin' && echo 'Ready to use: fgmpackd' || echo 'Add ~/.local/bin to PATH: export PATH=\"$HOME/.local/bin:$PATH\"')"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -1,9 +1,12 @@
 {
   "name": "fgmpack",
   "displayName": "fgmpack",
-  "description": "Inject versioned text fragments in the source code.",
   "version": "0.1.0",
   "publisher": "getrafty",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getrafty/fragments.git"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },

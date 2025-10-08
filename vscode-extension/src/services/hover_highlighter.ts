@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Client } from '../client';
 import { FragmentMarkerRange } from 'fgmpack-protocol';
-import { isProcessableDocument } from '../utils/documentFilters';
+import { isProcessableDocument } from '../utils/document_filters';
 
 export class FragmentHoverHighlighter implements vscode.Disposable {
   private readonly decorationType = vscode.window.createTextEditorDecorationType({

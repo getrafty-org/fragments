@@ -4,10 +4,10 @@ import { FragmentRequestMessage, FragmentResponseMessage } from 'fgmpack-protoco
 
 // Mock dependencies
 jest.mock('fgmpack-db');
-jest.mock('../documentManager');
-jest.mock('../fragmentService');
-jest.mock('../fragmentFileLocator');
-jest.mock('../revisionState');
+jest.mock('../document_manager');
+jest.mock('../fragment_service');
+jest.mock('../fragment_file_locator');
+jest.mock('../revision_state');
 
 describe('FragmentsServer', () => {
   let server: FragmentsServer;

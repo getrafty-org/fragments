@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Client } from '../client';
 import { FragmentVersionInfo } from 'fgmpack-protocol';
 
-export class FragmentStatusBarManager implements vscode.Disposable {
+export class StatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
 
   constructor(private readonly client: Client) {

@@ -1,4 +1,4 @@
-import { RevisionState } from '../../revisionState';
+import { RevisionState } from '../../revision_state';
 
 export class MockRevisionState implements RevisionState {
   private revisions = new Map<string, number>();
