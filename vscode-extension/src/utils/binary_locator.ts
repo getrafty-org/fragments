@@ -32,6 +32,17 @@ export class BinaryLocator {
 
   private async findBinary(): Promise<string | null> {
     const binaryName = this.getBinaryName();
+
+    if (process.env.HOME) {
+      const localBinPath = path.join(process.env.HOME, '.local', 'bin', binaryName);
+      try {
+        await access(localBinPath, fs.constants.X_OK);
+        return localBinPath;
+      } catch {
+      }
+    }
+
+    // Check system PATH
     try {
       const { stdout } = await execFileAsync(process.platform === 'win32' ? 'where' : 'which', [binaryName]);
       const candidates = stdout
@@ -53,6 +64,7 @@ export class BinaryLocator {
     } catch {
     }
 
+    // Check extension's global storage
     try {
       await access(path.join(this.localBinDir, binaryName), fs.constants.X_OK)
       return path.join(this.localBinDir, binaryName);
@@ -63,7 +75,28 @@ export class BinaryLocator {
   }
 
   private getBinaryName(): string {
-    return `${BIN_NAME_PREFIX}${process.platform === 'win32' ? '.exe' : ''}`;
+    const platform = process.platform;
+    const arch = process.arch;
+
+    let platformSuffix: string;
+    if (platform === 'win32') {
+      platformSuffix = arch === 'x64' ? '-windows-x86-64.exe' : `-windows-${arch}.exe`;
+    } else if (platform === 'darwin') {
+      platformSuffix = arch === 'x64' ? '-macos-x86-64' : `-macos-${arch}`;
+    } else if (platform === 'linux') {
+      if (arch === 'x64') {
+        platformSuffix = '-linux-x86-64';
+      } else if (arch === 'arm64') {
+        platformSuffix = '-linux-arm64';
+      } else {
+        platformSuffix = `-linux-${arch}`;
+      }
+    } else {
+      // Fallback for unknown platforms
+      platformSuffix = `-${platform}-${arch}`;
+    }
+
+    return `${BIN_NAME_PREFIX}${platformSuffix}`;
   }
 
   async downloadBinary(): Promise<string> {

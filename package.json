@@ -25,7 +25,7 @@
     "test": "npm run test --workspaces --if-present",
     "package": "npm run build && npm run vsce:package -w fgmpack",
     "package:fgmpackd": "npm run build:binary -w fgmpackd",
-    "install:server": "npm run build:fgmpackd && mkdir -p ~/.local/bin && cp dist/language-server/server.js ~/.local/bin/fgmpackd && chmod +x ~/.local/bin/fgmpackd && echo 'Installed to ~/.local/bin/fgmpackd' && (echo $PATH | grep -q '.local/bin' && echo 'Ready to use: fgmpackd' || echo 'Add ~/.local/bin to PATH: export PATH=\"$HOME/.local/bin:$PATH\"')"
+    "install:server": "npm run package:fgmpackd && mkdir -p ~/.local/bin && ARCH=$(uname -m) && if [ \"$ARCH\" = \"x86_64\" ]; then BINARY=\"fgmpackd-linux-x86-64\"; elif [ \"$ARCH\" = \"aarch64\" ] || [ \"$ARCH\" = \"arm64\" ]; then BINARY=\"fgmpackd-linux-arm64\"; else echo \"Unsupported architecture: $ARCH\" && exit 1; fi && cp dist/language-server/bin/$BINARY ~/.local/bin/$BINARY && chmod +x ~/.local/bin/$BINARY && echo \"Installed to ~/.local/bin/$BINARY\" && (echo $PATH | grep -q '.local/bin' && echo 'Ready to use: $BINARY' || echo 'Add ~/.local/bin to PATH: export PATH=\"$HOME/.local/bin:$PATH\"')"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
